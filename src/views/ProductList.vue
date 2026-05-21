@@ -123,14 +123,17 @@ watch(
     <p v-else-if="products.length === 0" class="empty">No products found.</p>
 
     <ul v-else class="list">
-      <li v-for="p in products" :key="p.id">
-        <strong>{{ p.name }}</strong>
-        <span>${{ Number(p.price).toFixed(2) }}</span>
-        <span> · Stock {{ p.stock_quantity }}</span>
-        <span
-          v-if="p.stock_quantity <= p.low_stock_threshold"
-          class="low"
-        > · Low stock</span>
+      <li v-for="p in products" :key="p.id" class="item">
+        <div>
+          <strong>{{ p.name }}</strong>
+          <span>${{ Number(p.price).toFixed(2) }}</span>
+          <span> · Stock {{ p.stock_quantity }}</span>
+          <span
+            v-if="p.stock_quantity <= p.low_stock_threshold"
+            class="low"
+          > · Low stock</span>
+        </div>
+        <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
       </li>
     </ul>
 
@@ -212,12 +215,21 @@ h1 {
   margin: 0;
 }
 
-.list li {
+.list li.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 6px;
   padding: 12px 14px;
   margin-bottom: 8px;
+}
+
+.edit {
+  color: #2d5bff;
+  font-size: 0.9rem;
+  text-decoration: none;
 }
 
 .low {

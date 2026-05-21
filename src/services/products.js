@@ -5,12 +5,22 @@ export async function fetchProducts(params = {}) {
   return data
 }
 
+export async function fetchProduct(id) {
+  const { data } = await api.get(`/products/${id}`)
+  return data
+}
+
 export async function createProduct(formData) {
   const { data } = await api.post('/products', formData)
   return data
 }
 
-export function buildProductFormData(fields, imageFiles = []) {
+export async function updateProduct(id, formData) {
+  const { data } = await api.put(`/products/${id}`, formData)
+  return data
+}
+
+export function buildProductFormData(fields, imageFiles = [], removeImageIds = []) {
   const fd = new FormData()
   fd.append('name', fields.name)
   fd.append('description', fields.description || '')
@@ -18,5 +28,6 @@ export function buildProductFormData(fields, imageFiles = []) {
   fd.append('stock_quantity', fields.stock_quantity)
   fd.append('low_stock_threshold', fields.low_stock_threshold)
   imageFiles.forEach((file) => fd.append('images[]', file))
+  removeImageIds.forEach((id) => fd.append('remove_images[]', id))
   return fd
 }

@@ -1,17 +1,27 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { createProduct, buildProductFormData } from '../services/products'
+import { onMounted, ref, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  fetchProduct,
+  createProduct,
+  updateProduct,
+  buildProductFormData,
+} from '../services/products'
 
+const route = useRoute()
 const router = useRouter()
+
+const isEdit = computed(() => !!route.params.id)
 
 const name = ref('')
 const description = ref('')
 const price = ref('')
-const category = ref('')
 const stockQuantity = ref(0)
 const lowStockThreshold = ref(10)
+const existingImages = ref([])
+const removeImageIds = ref([])
 const imageFiles = ref([])
+const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 
@@ -19,23 +29,60 @@ function onFileChange(e) {
   imageFiles.value = Array.from(e.target.files || [])
 }
 
+function markRemove(imageId) {
+  if (!removeImageIds.value.includes(imageId)) {
+    removeImageIds.value.push(imageId)
+  }
+}
+
+function unmarkRemove(imageId) {
+  removeImageIds.value = removeImageIds.value.filter((id) => id !== imageId)
+}
+
+function isRemoved(imageId) {
+  return removeImageIds.value.includes(imageId)
+}
+
+async function loadProduct() {
+  if (!isEdit.value) return
+  loading.value = true
+  try {
+    const p = await fetchProduct(route.params.id)
+    name.value = p.name
+    description.value = p.description || ''
+    price.value = p.price
+    stockQuantity.value = p.stock_quantity
+    lowStockThreshold.value = p.low_stock_threshold
+    existingImages.value = p.images || []
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Record not found.'
+  } finally {
+    loading.value = false
+  }
+}
+
 async function onSubmit() {
   error.value = ''
   saving.value = true
 
+  const formData = buildProductFormData(
+    {
+      name: name.value,
+      description: description.value,
+      price: price.value,
+      stock_quantity: stockQuantity.value,
+      low_stock_threshold: lowStockThreshold.value,
+    },
+    imageFiles.value,
+    removeImageIds.value
+  )
+
   try {
-    const formData = buildProductFormData(
-      {
-        name: name.value,
-        description: description.value,
-        price: price.value,
-        category: category.value,
-        stock_quantity: stockQuantity.value,
-        low_stock_threshold: lowStockThreshold.value,
-      },
-      imageFiles.value
-    )
-    await createProduct(formData)
+    if (isEdit.value) {
+      await updateProduct(route.params.id, formData)
+    } else {
+      await createProduct(formData)
+    }
     router.push('/products')
   } catch (e) {
     error.value = e.response?.data?.message || 'Could not save product.'
@@ -43,14 +90,18 @@ async function onSubmit() {
     saving.value = false
   }
 }
+
+onMounted(loadProduct)
 </script>
 
 <template>
   <div class="page">
     <router-link to="/products">Back to list</router-link>
-    <h1>New product</h1>
+    <h1>{{ isEdit ? 'Edit product' : 'New product' }}</h1>
 
-    <form class="form" @submit.prevent="onSubmit">
+    <p v-if="loading">Loading...</p>
+
+    <form v-else class="form" @submit.prevent="onSubmit">
       <label>
         Name
         <input v-model="name" type="text" required />
@@ -67,11 +118,6 @@ async function onSubmit() {
       </label>
 
       <label>
-        Category
-        <input v-model="category" type="text" />
-      </label>
-
-      <label>
         Stock quantity
         <input v-model.number="stockQuantity" type="number" min="0" required />
       </label>
@@ -81,15 +127,33 @@ async function onSubmit() {
         <input v-model.number="lowStockThreshold" type="number" min="0" required />
       </label>
 
+      <div v-if="existingImages.length" class="images">
+        <p class="img-label">Current images</p>
+        <div v-for="img in existingImages" :key="img.id" class="thumb">
+          <img :src="img.url" alt="" :class="{ faded: isRemoved(img.id) }" />
+          <button
+            v-if="!isRemoved(img.id)"
+            type="button"
+            class="remove-btn"
+            @click="markRemove(img.id)"
+          >
+            Remove
+          </button>
+          <button v-else type="button" class="remove-btn" @click="unmarkRemove(img.id)">
+            Undo
+          </button>
+        </div>
+      </div>
+
       <label>
-        Images
+        {{ isEdit ? 'Add more images' : 'Images' }}
         <input type="file" accept="image/*" multiple @change="onFileChange" />
       </label>
 
       <p v-if="error" class="error">{{ error }}</p>
 
       <button type="submit" :disabled="saving">
-        {{ saving ? 'Saving...' : 'Create product' }}
+        {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create product' }}
       </button>
     </form>
   </div>
@@ -131,7 +195,45 @@ textarea {
   box-sizing: border-box;
 }
 
-button {
+.images {
+  margin-bottom: 12px;
+}
+
+.img-label {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.thumb {
+  display: inline-block;
+  margin-right: 10px;
+  margin-bottom: 8px;
+  vertical-align: top;
+}
+
+.thumb img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+
+.thumb img.faded {
+  opacity: 0.4;
+}
+
+.remove-btn {
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #b42318;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+button[type='submit'] {
   margin-top: 8px;
   padding: 10px 16px;
   background: #2d5bff;
@@ -141,7 +243,7 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
+button[type='submit']:disabled {
   opacity: 0.7;
 }
 

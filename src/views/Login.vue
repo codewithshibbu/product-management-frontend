@@ -17,7 +17,7 @@ async function onSubmit() {
 
   try {
     await login(email.value, password.value)
-    const redirect = route.query.redirect || '/'
+    const redirect = route.query.redirect || '/products'
     router.push(redirect)
   } catch (e) {
     error.value = e.response?.data?.message || 'Something went wrong. Try again.'

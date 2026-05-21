@@ -31,7 +31,7 @@ async function onSubmit() {
       password: password.value,
       password_confirmation: passwordConfirmation.value,
     })
-    router.push('/')
+    router.push('/products')
   } catch (e) {
     error.value = getErrorMessage(e)
   } finally {

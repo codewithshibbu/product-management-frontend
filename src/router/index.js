@@ -16,9 +16,21 @@ const routes = [
   },
   {
     path: '/',
-    name: 'home',
-    component: () => import('../views/Home.vue'),
+    component: () => import('../components/AppLayout.vue'),
     meta: { requiresAuth: true },
+    children: [
+      { path: '', redirect: { name: 'products' } },
+      {
+        path: 'products',
+        name: 'products',
+        component: () => import('../views/ProductList.vue'),
+      },
+      {
+        path: 'products/new',
+        name: 'product-create',
+        component: () => import('../views/ProductForm.vue'),
+      },
+    ],
   },
 ]
 
@@ -29,13 +41,14 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const loggedIn = isLoggedIn()
+  const needsAuth = to.matched.some((r) => r.meta.requiresAuth)
 
-  if (to.meta.requiresAuth && !loggedIn) {
+  if (needsAuth && !loggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 
   if (to.meta.guest && loggedIn) {
-    return { name: 'home' }
+    return { name: 'products' }
   }
 })
 

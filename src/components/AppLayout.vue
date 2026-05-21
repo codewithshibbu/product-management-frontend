@@ -1,9 +1,8 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { getUser, logout } from '../services/auth'
+import { logout } from '../services/auth'
 
 const router = useRouter()
-const user = getUser()
 
 async function handleLogout() {
   await logout()
@@ -14,13 +13,11 @@ async function handleLogout() {
 <template>
   <div class="layout">
     <header>
-      <span class="brand">Products</span>
+      <router-link to="/products" class="brand">Products</router-link>
       <button type="button" class="logout" @click="handleLogout">Log out</button>
     </header>
-
     <main>
-      <p v-if="user">Hey, {{ user.name }}</p>
-      <p class="hint">You're logged in. Build the product screens from here.</p>
+      <router-view />
     </main>
   </div>
 </template>
@@ -43,6 +40,7 @@ header {
 .brand {
   font-weight: 600;
   color: #222;
+  text-decoration: none;
 }
 
 .logout {
@@ -59,12 +57,8 @@ header {
 }
 
 main {
-  max-width: 720px;
-  margin: 40px auto;
-  padding: 0 24px;
-}
-
-.hint {
-  color: #666;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
 }
 </style>

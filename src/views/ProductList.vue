@@ -148,11 +148,7 @@ watch(
           <span>${{ Number(p.price).toFixed(2) }}</span>
           <span> · Stock {{ p.stock_quantity }}</span>
 
-// <span
-//            v-if="p.stock_quantity <= p.low_stock_threshold"
-//            class="low"
-//          > · Low stock</span>
-//        </div>
+
           <span v-if="p.is_low_stock" class="low"> · Low stock</span>
         </div>
         <div class="actions">

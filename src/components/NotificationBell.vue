@@ -1,46 +1,99 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  fetchUnreadCount,
+  fetchNotifications,
+  markAsRead,
+  markAllAsRead,
+} from '../services/notifications'
 
+const router = useRouter()
+const route = useRoute()
+const root = ref(null)
 const open = ref(false)
+const unreadCount = ref(0)
+const notifications = ref([])
+const loading = ref(false)
 
-// Static placeholder data for UI commit only
-const unreadCount = 2
-const notifications = [
-  {
-    id: 1,
-    is_read: false,
-    message: 'Widget A is low on stock (3 left, alert at 10)',
-    product: { name: 'Widget A' },
-  },
-  {
-    id: 2,
-    is_read: false,
-    message: 'Gadget B is low on stock (1 left, alert at 5)',
-    product: { name: 'Gadget B' },
-  },
-  {
-    id: 3,
-    is_read: true,
-    message: 'Supply C is low on stock (0 left, alert at 8)',
-    product: { name: 'Supply C' },
-  },
-]
+async function refreshCount() {
+  try {
+    const data = await fetchUnreadCount()
+    unreadCount.value = data.unread_count ?? 0
+  } catch {
+    unreadCount.value = 0
+  }
+}
 
-function toggleOpen() {
+async function loadList() {
+  loading.value = true
+  try {
+    const data = await fetchNotifications({ rows: 15 })
+    notifications.value = data.data ?? []
+  } catch {
+    notifications.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+async function toggleOpen() {
   open.value = !open.value
+  if (open.value) {
+    await Promise.all([loadList(), refreshCount()])
+  }
 }
 
-function onItemClick() {
+async function onItemClick(notification) {
+  if (!notification.is_read) {
+    try {
+      await markAsRead(notification.id)
+      notification.is_read = true
+      unreadCount.value = Math.max(0, unreadCount.value - 1)
+    } catch {
+      /* still navigate on failure */
+    }
+  }
   open.value = false
+  if (notification.product_id) {
+    router.push(`/products/${notification.product_id}/edit`)
+  }
 }
 
-function onMarkAll() {
-  open.value = false
+async function onMarkAll() {
+  try {
+    await markAllAsRead()
+    notifications.value.forEach((n) => {
+      n.is_read = true
+    })
+    unreadCount.value = 0
+  } catch {
+    alert('Could not mark all as read.')
+  }
 }
+
+function onClickOutside(event) {
+  if (root.value && !root.value.contains(event.target)) {
+    open.value = false
+  }
+}
+
+onMounted(() => {
+  refreshCount()
+  document.addEventListener('click', onClickOutside)
+})
+
+watch(() => route.fullPath, () => {
+  refreshCount()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onClickOutside)
+})
 </script>
 
 <template>
-  <div class="bell-wrap">
+  <div ref="root" class="bell-wrap">
     <button type="button" class="bell-btn" aria-label="Stock notifications" @click.stop="toggleOpen">
       Alerts
       <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
@@ -59,7 +112,8 @@ function onMarkAll() {
         </button>
       </div>
 
-      <p v-if="notifications.length === 0" class="dropdown-msg">No notifications yet.</p>
+      <p v-if="loading" class="dropdown-msg">Loading...</p>
+      <p v-else-if="notifications.length === 0" class="dropdown-msg">No notifications yet.</p>
 
       <ul v-else class="dropdown-list">
         <li
@@ -68,7 +122,7 @@ function onMarkAll() {
           class="dropdown-item"
           :class="{ unread: !n.is_read }"
         >
-          <button type="button" class="item-btn" @click="onItemClick">
+          <button type="button" class="item-btn" @click="onItemClick(n)">
             <span v-if="!n.is_read" class="dot" aria-hidden="true" />
             <span class="item-text">{{ n.message }}</span>
             <span v-if="n.product?.name" class="item-product">{{ n.product.name }}</span>

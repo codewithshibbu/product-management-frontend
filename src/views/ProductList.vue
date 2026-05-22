@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { fetchProducts, deleteProduct } from '../services/products'
 
 const products = ref([])
+const lowStockCount = ref(0)
 const meta = ref({})
 const loading = ref(false)
 const error = ref('')
@@ -36,6 +37,7 @@ async function loadProducts() {
   try {
     const data = await fetchProducts(buildParams())
     products.value = data.data
+    lowStockCount.value = data.low_stock_count ?? 0
     meta.value = {
       current_page: data.current_page,
       last_page: data.last_page,
@@ -130,6 +132,10 @@ watch(
       <button type="button" class="btn-secondary" @click="applyFilters">Apply</button>
     </div>
 
+    <p v-if="lowStockCount > 0" class="low-banner">
+      {{ lowStockCount }} product(s) low on stock.
+    </p>
+
     <p v-if="error" class="error">{{ error }}</p>
     <p v-else-if="loading">Loading...</p>
 
@@ -141,10 +147,13 @@ watch(
           <strong>{{ p.name }}</strong>
           <span>${{ Number(p.price).toFixed(2) }}</span>
           <span> · Stock {{ p.stock_quantity }}</span>
-          <span
-            v-if="p.stock_quantity <= p.low_stock_threshold"
-            class="low"
-          > · Low stock</span>
+
+// <span
+//            v-if="p.stock_quantity <= p.low_stock_threshold"
+//            class="low"
+//          > · Low stock</span>
+//        </div>
+          <span v-if="p.is_low_stock" class="low"> · Low stock</span>
         </div>
         <div class="actions">
           <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>

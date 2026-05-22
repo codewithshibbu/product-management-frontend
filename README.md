@@ -15,7 +15,13 @@ cp .env.example .env   # adjust VITE_API_URL if your backend URL differs
 npm run dev
 ```
 
-Opens at `http://localhost:5173`. `/login` and `/register` for guests, `/` needs a token.
+Opens at `http://localhost:5173`. `/login` and `/register` for guests. `/products` needs a token.
+
+## Products
+
+- List with search, category, price range, sort, pagination
+- Create/edit with multiple image upload
+- Images stored on backend `public` disk (`storage/app/public/products/{id}/`)
 
 ## Build
 

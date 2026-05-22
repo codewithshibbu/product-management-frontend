@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchProduct,
@@ -11,7 +11,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 
-const isEdit = computed(() => !!route.params.id)
+const isEdit = computed(() => route.name === 'product-edit')
 
 const name = ref('')
 const description = ref('')
@@ -24,6 +24,18 @@ const imageFiles = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+
+function resetForm() {
+  name.value = ''
+  description.value = ''
+  price.value = ''
+  stockQuantity.value = 0
+  lowStockThreshold.value = 10
+  existingImages.value = []
+  removeImageIds.value = []
+  imageFiles.value = []
+  error.value = ''
+}
 
 function onFileChange(e) {
   imageFiles.value = Array.from(e.target.files || [])
@@ -44,8 +56,12 @@ function isRemoved(imageId) {
 }
 
 async function loadProduct() {
-  if (!isEdit.value) return
+  if (!isEdit.value) {
+    resetForm()
+    return
+  }
   loading.value = true
+  error.value = ''
   try {
     const p = await fetchProduct(route.params.id)
     name.value = p.name
@@ -54,6 +70,8 @@ async function loadProduct() {
     stockQuantity.value = p.stock_quantity
     lowStockThreshold.value = p.low_stock_threshold
     existingImages.value = p.images || []
+    removeImageIds.value = []
+    imageFiles.value = []
   } catch (e) {
     error.value = e.response?.data?.message || 'Record not found.'
   } finally {
@@ -83,7 +101,7 @@ async function onSubmit() {
     } else {
       await createProduct(formData)
     }
-    router.push('/products')
+    router.push({ name: 'products' })
   } catch (e) {
     error.value = e.response?.data?.message || 'Could not save product.'
   } finally {
@@ -91,15 +109,24 @@ async function onSubmit() {
   }
 }
 
+function closePanel() {
+  router.push({ name: 'products' })
+}
+
 const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
 
 onMounted(loadProduct)
+
+watch(() => route.params.id, loadProduct)
+watch(() => route.name, loadProduct)
 </script>
 
 <template>
-  <div class="page">
-    <router-link to="/products">Back to list</router-link>
-    <h1>{{ isEdit ? 'Edit product' : 'New product' }}</h1>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>{{ isEdit ? 'Edit product' : 'New product' }}</h2>
+      <button type="button" class="close-btn" @click="closePanel">Close</button>
+    </div>
 
     <p v-if="loading">Loading...</p>
 
@@ -156,26 +183,50 @@ onMounted(loadProduct)
 
       <p v-if="error" class="error">{{ error }}</p>
 
-      <button type="submit" :disabled="saving">
-        {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create product' }}
-      </button>
+      <div class="form-actions">
+        <button type="button" class="btn-cancel" @click="closePanel">Cancel</button>
+        <button type="submit" class="btn-save" :disabled="saving">
+          {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create' }}
+        </button>
+      </div>
     </form>
   </div>
 </template>
 
 <style scoped>
-.page a {
-  color: #666;
-  font-size: 0.9rem;
+.panel {
+  height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
 }
 
-h1 {
-  margin: 16px 0;
-  font-size: 1.3rem;
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.close-btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.close-btn:hover {
+  background: #f9f9f9;
 }
 
 .form {
-  max-width: 400px;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
@@ -216,8 +267,8 @@ textarea {
 }
 
 .thumb img {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   object-fit: cover;
   border-radius: 4px;
   display: block;
@@ -237,8 +288,21 @@ textarea {
   cursor: pointer;
 }
 
-button[type='submit'] {
+.form-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 8px;
+}
+
+.btn-cancel {
+  padding: 10px 16px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.btn-save {
   padding: 10px 16px;
   background: #2d5bff;
   color: #fff;
@@ -247,7 +311,7 @@ button[type='submit'] {
   cursor: pointer;
 }
 
-button[type='submit']:disabled {
+.btn-save:disabled {
   opacity: 0.7;
 }
 

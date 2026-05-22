@@ -24,16 +24,18 @@ const routes = [
         path: 'products',
         name: 'products',
         component: () => import('../views/ProductList.vue'),
-      },
-      {
-        path: 'products/new',
-        name: 'product-create',
-        component: () => import('../views/ProductForm.vue'),
-      },
-      {
-        path: 'products/:id/edit',
-        name: 'product-edit',
-        component: () => import('../views/ProductForm.vue'),
+        children: [
+          {
+            path: 'new',
+            name: 'product-create',
+            component: () => import('../views/ProductForm.vue'),
+          },
+          {
+            path: ':id/edit',
+            name: 'product-edit',
+            component: () => import('../views/ProductForm.vue'),
+          },
+        ],
       },
     ],
   },

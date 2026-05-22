@@ -1,12 +1,23 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchProducts, deleteProduct } from '../services/products'
+
+const route = useRoute()
 
 const products = ref([])
 const lowStockCount = ref(0)
 const meta = ref({})
 const loading = ref(false)
 const error = ref('')
+
+const showForm = computed(
+  () => route.name === 'product-create' || route.name === 'product-edit'
+)
+
+const activeProductId = computed(() =>
+  route.name === 'product-edit' ? Number(route.params.id) : null
+)
 
 const filters = ref({
   search: '',
@@ -91,95 +102,165 @@ watch(
   ],
   applyFilters
 )
+
+watch(
+  () => route.name,
+  (name, prev) => {
+    if (
+      (prev === 'product-create' || prev === 'product-edit') &&
+      name === 'products'
+    ) {
+      loadProducts()
+    }
+  }
+)
 </script>
 
 <template>
-  <div class="page">
-    <div class="top">
-      <h1>Products</h1>
-      <router-link to="/products/new" class="btn">Add product</router-link>
-    </div>
+  <div class="page" :class="{ 'is-split': showForm }">
+    <section class="list-panel" :class="{ half: showForm }">
+      <div class="top">
+        <h1>Products</h1>
+        <router-link to="/products/new" class="btn">Add product</router-link>
+      </div>
 
-    <div class="filters">
-      <input
-        v-model="filters.search"
-        type="search"
-        placeholder="Search name or description"
-        @input="onSearchInput"
-      />
-      <input v-model="filters.min_price" type="number" min="0" step="0.01" placeholder="Min price" />
-      <input v-model="filters.max_price" type="number" min="0" step="0.01" placeholder="Max price" />
-      <label class="check">
-        <input v-model="filters.low_stock" type="checkbox" />
-        Low stock
-      </label>
-      <select v-model="filters.sort">
-        <option value="created_at">Newest</option>
-        <option value="name">Name</option>
-        <option value="price">Price</option>
-        <option value="stock_quantity">Stock</option>
-      </select>
-      <select v-model="filters.order">
-        <option value="desc">Desc</option>
-        <option value="asc">Asc</option>
-      </select>
-      <select v-model="filters.rows">
-        <option :value="10">10 rows</option>
-        <option :value="20">20 rows</option>
-        <option :value="30">30 rows</option>
-        <option :value="50">50 rows</option>
-      </select>
-      <button type="button" class="btn-secondary" @click="applyFilters">Apply</button>
-    </div>
+      <div class="filters" :class="{ compact: showForm }">
+        <input
+          v-model="filters.search"
+          type="search"
+          class="filter-search"
+          placeholder="Search name or description"
+          @input="onSearchInput"
+        />
+        <input
+          v-model="filters.min_price"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Min price"
+        />
+        <input
+          v-model="filters.max_price"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Max price"
+        />
+        <label class="check">
+          <input v-model="filters.low_stock" type="checkbox" />
+          Low stock
+        </label>
+        <select v-model="filters.sort">
+          <option value="created_at">Newest</option>
+          <option value="name">Name</option>
+          <option value="price">Price</option>
+          <option value="stock_quantity">Stock</option>
+        </select>
+        <select v-model="filters.order">
+          <option value="desc">Desc</option>
+          <option value="asc">Asc</option>
+        </select>
+        <select v-model="filters.rows">
+          <option :value="10">10</option>
+          <option :value="20">20</option>
+          <option :value="30">30</option>
+        </select>
+        <button type="button" class="btn-secondary" @click="applyFilters">Apply</button>
+      </div>
 
-    <p v-if="lowStockCount > 0" class="low-banner">
-      {{ lowStockCount }} product(s) low on stock.
-    </p>
+      <p v-if="lowStockCount > 0" class="low-banner">
+        {{ lowStockCount }} product(s) low on stock.
+      </p>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-else-if="loading">Loading...</p>
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-else-if="loading">Loading...</p>
 
-    <p v-else-if="products.length === 0" class="empty">No products found.</p>
+      <p v-else-if="products.length === 0" class="empty">No products found.</p>
 
-    <ul v-else class="list">
-      <li v-for="p in products" :key="p.id" class="item">
-        <div>
-          <strong>{{ p.name }}</strong>
-          <span>${{ Number(p.price).toFixed(2) }}</span>
-          <span> · Stock {{ p.stock_quantity }}</span>
+      <ul v-else class="list">
+        <li
+          v-for="p in products"
+          :key="p.id"
+          class="item"
+          :class="{ active: activeProductId === p.id }"
+        >
+          <div class="item-main">
+            <strong>{{ p.name }}</strong>
+            <span>${{ Number(p.price).toFixed(2) }}</span>
+            <span> · Stock {{ p.stock_quantity }}</span>
+            <span v-if="p.is_low_stock" class="low"> · Low stock</span>
+          </div>
+          <div class="actions">
+            <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
+            <button type="button" class="delete" @click="onDelete(p.id)">Delete</button>
+          </div>
+        </li>
+      </ul>
 
+      <div v-if="meta.last_page > 1" class="pager">
+        <button
+          type="button"
+          :disabled="meta.current_page <= 1"
+          @click="goToPage(meta.current_page - 1)"
+        >
+          Prev
+        </button>
+        <span class="pager-label">
+          {{ meta.current_page }} / {{ meta.last_page }}
+        </span>
+        <button
+          type="button"
+          :disabled="meta.current_page >= meta.last_page"
+          @click="goToPage(meta.current_page + 1)"
+        >
+          Next
+        </button>
+      </div>
+    </section>
 
-          <span v-if="p.is_low_stock" class="low"> · Low stock</span>
-        </div>
-        <div class="actions">
-          <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
-          <button type="button" class="delete" @click="onDelete(p.id)">Delete</button>
-        </div>
-      </li>
-    </ul>
-
-    <div v-if="meta.last_page > 1" class="pager">
-      <button type="button" :disabled="meta.current_page <= 1" @click="goToPage(meta.current_page - 1)">
-        Prev
-      </button>
-      <span>Page {{ meta.current_page }} of {{ meta.last_page }} ({{ meta.total }} items)</span>
-      <button
-        type="button"
-        :disabled="meta.current_page >= meta.last_page"
-        @click="goToPage(meta.current_page + 1)"
-      >
-        Next
-      </button>
-    </div>
+    <aside v-if="showForm" class="form-panel">
+      <router-view />
+    </aside>
   </div>
 </template>
 
 <style scoped>
+.page {
+  min-height: calc(100vh - 53px);
+}
+
+.page.is-split {
+  display: flex;
+  align-items: stretch;
+}
+
+.list-panel {
+  flex: 1;
+  min-width: 0;
+  padding: 24px;
+}
+
+.list-panel.half {
+  flex: 0 0 50%;
+  max-width: 50%;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+}
+
+.form-panel {
+  flex: 0 0 50%;
+  max-width: 50%;
+  min-width: 0;
+  overflow-y: auto;
+  background: #f4f5f7;
+}
+
 .top {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 12px;
 }
 
 h1 {
@@ -194,6 +275,25 @@ h1 {
   margin-bottom: 16px;
 }
 
+.filters.compact .filter-search {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.filters.compact input,
+.filters.compact select {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+}
+
+.filters.compact .check {
+  flex: 1 1 100%;
+}
+
+.filters.compact .btn-secondary {
+  flex: 1 1 100%;
+}
+
 .filters input,
 .filters select {
   padding: 7px 10px;
@@ -202,8 +302,9 @@ h1 {
   font-size: 0.9rem;
 }
 
-.filters input[type='search'] {
+.filters:not(.compact) .filter-search {
   min-width: 200px;
+  flex: 1 1 220px;
 }
 
 .check {
@@ -220,6 +321,7 @@ h1 {
   text-decoration: none;
   border-radius: 6px;
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .btn-secondary {
@@ -228,6 +330,16 @@ h1 {
   border-radius: 4px;
   background: #fff;
   cursor: pointer;
+}
+
+.low-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #9a3412;
+  font-size: 0.9rem;
 }
 
 .list {
@@ -239,7 +351,8 @@ h1 {
 .list li.item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 6px;
@@ -247,10 +360,27 @@ h1 {
   margin-bottom: 8px;
 }
 
+.list li.item.active {
+  border-color: #2d5bff;
+  box-shadow: 0 0 0 1px #2d5bff;
+}
+
+.item-main {
+  min-width: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.item-main strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
 .actions {
   display: flex;
-  gap: 12px;
-  font-size: 0.9rem;
+  flex-shrink: 0;
+  gap: 10px;
+  font-size: 0.85rem;
 }
 
 .edit {
@@ -275,8 +405,14 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
   margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.pager-label {
+  font-size: 0.85rem;
+  color: #555;
 }
 
 .pager button {

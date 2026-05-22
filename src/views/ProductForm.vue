@@ -91,6 +91,8 @@ async function onSubmit() {
   }
 }
 
+const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
+
 onMounted(loadProduct)
 </script>
 
@@ -126,6 +128,8 @@ onMounted(loadProduct)
         Low stock threshold
         <input v-model.number="lowStockThreshold" type="number" min="0" required />
       </label>
+
+      <p v-if="isLowStock" class="low-hint">Stock is at or below the alert level.</p>
 
       <div v-if="existingImages.length" class="images">
         <p class="img-label">Current images</p>
@@ -245,6 +249,12 @@ button[type='submit'] {
 
 button[type='submit']:disabled {
   opacity: 0.7;
+}
+
+.low-hint {
+  margin: -4px 0 12px;
+  font-size: 0.85rem;
+  color: #9a3412;
 }
 
 .error {

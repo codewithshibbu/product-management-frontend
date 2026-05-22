@@ -16,7 +16,14 @@ export async function createProduct(formData) {
 }
 
 export async function updateProduct(id, formData) {
-  const { data } = await api.put(`/products/${id}`, formData)
+  // Laravel/PHP does not read multipart fields on PUT — use POST + _method=PUT
+  formData.append('_method', 'PUT')
+  const { data } = await api.post(`/products/${id}`, formData)
+  return data
+}
+
+export async function deleteProduct(id) {
+  const { data } = await api.delete(`/products/${id}`)
   return data
 }
 

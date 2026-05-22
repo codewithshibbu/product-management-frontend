@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { fetchProducts } from '../services/products'
+import { fetchProducts, deleteProduct } from '../services/products'
 
 const products = ref([])
 const meta = ref({})
@@ -63,6 +63,19 @@ function goToPage(page) {
   if (page < 1 || page > meta.value.last_page) return
   filters.value.page = page
   loadProducts()
+}
+
+async function onDelete(id) {
+  if (!confirm('Delete this product?')) return
+  try {
+    await deleteProduct(id)
+    if (products.value.length === 1 && filters.value.page > 1) {
+      filters.value.page--
+    }
+    loadProducts()
+  } catch {
+    alert('Could not delete product.')
+  }
 }
 
 onMounted(loadProducts)
@@ -133,7 +146,10 @@ watch(
             class="low"
           > · Low stock</span>
         </div>
-        <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
+        <div class="actions">
+          <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
+          <button type="button" class="delete" @click="onDelete(p.id)">Delete</button>
+        </div>
       </li>
     </ul>
 
@@ -226,10 +242,23 @@ h1 {
   margin-bottom: 8px;
 }
 
+.actions {
+  display: flex;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
 .edit {
   color: #2d5bff;
-  font-size: 0.9rem;
   text-decoration: none;
+}
+
+.delete {
+  border: none;
+  background: none;
+  color: #b42318;
+  cursor: pointer;
+  padding: 0;
 }
 
 .low {

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchProduct,
@@ -25,6 +25,8 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const fileInput = ref(null)
+const saveMenuOpen = ref(false)
+const saveMenuRef = ref(null)
 
 function resetForm() {
   name.value = ''
@@ -36,6 +38,12 @@ function resetForm() {
   removeImageIds.value = []
   imageFiles.value = []
   error.value = ''
+}
+
+function clearFileInput() {
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
 }
 
 function onFileChange(e) {
@@ -73,6 +81,7 @@ async function loadProduct() {
     existingImages.value = p.images || []
     removeImageIds.value = []
     imageFiles.value = []
+    clearFileInput()
   } catch (e) {
     error.value = e.response?.data?.message || 'Record not found.'
   } finally {
@@ -80,7 +89,19 @@ async function loadProduct() {
   }
 }
 
-async function onSubmit() {
+function refreshList() {
+  const query = { ...route.query }
+  delete query.refresh
+  query.refresh = String(Date.now())
+  router.replace({
+    name: route.name,
+    params: route.params,
+    query,
+  })
+}
+
+async function onSubmit(closeAfter = false) {
+  saveMenuOpen.value = false
   error.value = ''
   saving.value = true
 
@@ -99,10 +120,22 @@ async function onSubmit() {
   try {
     if (isEdit.value) {
       await updateProduct(route.params.id, formData)
+      if (closeAfter) {
+        router.push({ name: 'products', query: { refresh: '1' } })
+      } else {
+        await loadProduct()
+        refreshList()
+      }
     } else {
       await createProduct(formData)
+      if (closeAfter) {
+        router.push({ name: 'products', query: { refresh: '1' } })
+      } else {
+        resetForm()
+        clearFileInput()
+        refreshList()
+      }
     }
-    router.push({ name: 'products', query: { refresh: '1' } })
   } catch (e) {
     error.value = e.response?.data?.message || 'Could not save product.'
   } finally {
@@ -126,14 +159,34 @@ function fillDummyData() {
 
 function resetValues() {
   resetForm()
-  if (fileInput.value) {
-    fileInput.value.value = ''
+  clearFileInput()
+}
+
+function toggleSaveMenu() {
+  saveMenuOpen.value = !saveMenuOpen.value
+}
+
+function onSaveMenuOutside(event) {
+  if (saveMenuRef.value && !saveMenuRef.value.contains(event.target)) {
+    saveMenuOpen.value = false
   }
 }
 
 const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
 
-onMounted(loadProduct)
+const saveLabel = computed(() => (isEdit.value ? 'Update' : 'Create'))
+const saveAndCloseLabel = computed(() =>
+  isEdit.value ? 'Update and close' : 'Create and close'
+)
+
+onMounted(() => {
+  loadProduct()
+  document.addEventListener('click', onSaveMenuOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onSaveMenuOutside)
+})
 
 watch(() => route.params.id, loadProduct)
 watch(() => route.name, loadProduct)
@@ -150,27 +203,44 @@ watch(() => route.name, loadProduct)
           </button>
           <button type="button" class="reset-btn" @click="resetValues">Reset</button>
         </template>
-        <button
-          v-if="!loading"
-          type="submit"
-          form="product-form"
-          class="btn-save"
-          :disabled="saving"
-        >
-          {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create' }}
-        </button>
+
+        <div v-if="!loading" ref="saveMenuRef" class="save-dropdown">
+          <div class="save-split">
+            <button
+              type="button"
+              class="btn-save-main"
+              :disabled="saving"
+              @click="onSubmit(false)"
+            >
+              {{ saving ? 'Saving...' : saveLabel }}
+            </button>
+            <button
+              type="button"
+              class="btn-save-caret"
+              :disabled="saving"
+              aria-label="More save options"
+              @click.stop="toggleSaveMenu"
+            >
+              <span class="caret" :class="{ open: saveMenuOpen }">▼</span>
+            </button>
+          </div>
+          <div v-if="saveMenuOpen" class="save-menu" @click.stop>
+            <button type="button" :disabled="saving" @click="onSubmit(false)">
+              {{ saveLabel }}
+            </button>
+            <button type="button" :disabled="saving" @click="onSubmit(true)">
+              {{ saveAndCloseLabel }}
+            </button>
+          </div>
+        </div>
+
         <button type="button" class="close-btn" @click="closePanel">Close</button>
       </div>
     </div>
 
     <p v-if="loading">Loading...</p>
 
-    <form
-      v-else
-      id="product-form"
-      class="form"
-      @submit.prevent="onSubmit"
-    >
+    <form v-else id="product-form" class="form" @submit.prevent="onSubmit(false)">
       <label>
         Name
         <input v-model="name" type="text" required />
@@ -259,6 +329,97 @@ h2 {
   flex-shrink: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.save-dropdown {
+  position: relative;
+}
+
+.save-split {
+  display: flex;
+  align-items: stretch;
+}
+
+.btn-save-main {
+  padding: 6px 14px;
+  background: #2d5bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px 0 0 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.btn-save-main:hover:not(:disabled) {
+  background: #2449d4;
+}
+
+.btn-save-caret {
+  padding: 6px 10px;
+  background: #2d5bff;
+  color: #fff;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+}
+
+.btn-save-caret:hover:not(:disabled) {
+  background: #2449d4;
+}
+
+.btn-save-main:disabled,
+.btn-save-caret:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.caret {
+  display: inline-block;
+  font-size: 0.65rem;
+  transition: transform 0.15s ease;
+}
+
+.caret.open {
+  transform: rotate(180deg);
+}
+
+.save-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+  overflow: hidden;
+}
+
+.save-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: #fff;
+  text-align: left;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.save-menu button:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+
+.save-menu button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.save-menu button + button {
+  border-top: 1px solid #eee;
 }
 
 .dummy-btn {
@@ -363,26 +524,6 @@ textarea {
   color: #b42318;
   font-size: 0.75rem;
   cursor: pointer;
-}
-
-.btn-save {
-  padding: 6px 14px;
-  background: #2d5bff;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.btn-save:hover:not(:disabled) {
-  background: #2449d4;
-}
-
-.btn-save:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 
 .low-hint {

@@ -240,17 +240,31 @@ watch(
     }
   }
 )
+
+watch(
+  () => route.query.refresh,
+  (refresh) => {
+    if (!refresh) return
+    if (route.name !== 'product-create' && route.name !== 'product-edit') return
+
+    loadProducts().finally(() => {
+      const query = { ...route.query }
+      delete query.refresh
+      router.replace({ name: route.name, params: route.params, query })
+    })
+  }
+)
 </script>
 
 <template>
-  <div class="page" :class="{ 'is-split': showForm }">
-    <section class="list-panel" :class="{ half: showForm }">
+  <div class="page" :class="{ 'has-form': showForm }">
+    <section class="list-panel">
       <div class="top">
-        <h1></h1>
+        <h1>Products</h1>
         <router-link to="/products/new" class="btn">Add product</router-link>
       </div>
 
-      <div class="filters" :class="{ compact: showForm }">
+      <div class="filters">
         <input
           v-model="filters.search"
           type="search"
@@ -390,8 +404,10 @@ watch(
                   <span v-else class="no-img">—</span>
                 </td>
                 <td class="col-name">
-                  <span class="name-text">{{ p.name }}</span>
-                  <span v-if="p.is_low_stock" class="low-badge">Low stock</span>
+                  <div class="name-cell">
+                    <span class="name-text">{{ p.name }}</span>
+                    <span v-if="isLowStock(p)" class="low-badge">Low stock</span>
+                  </div>
                 </td>
                 <td class="col-price">${{ Number(p.price).toFixed(2) }}</td>
                 <td class="col-stock">{{ p.stock_quantity }}</td>
@@ -441,23 +457,23 @@ watch(
   min-height: calc(100vh - 53px);
 }
 
-.page.is-split {
-  display: flex;
+.page.has-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(480px, 46vw);
   align-items: stretch;
 }
 
 .list-panel {
-  flex: 1;
   min-width: 0;
-  padding: 8px;
-  transition: flex 0.2s ease, max-width 0.2s ease;
+  padding: 8px 16px 24px;
+  box-sizing: border-box;
 }
 
-.list-panel.half {
-  flex: 0 0 50%;
-  max-width: 50%;
-  border-right: 1px solid #ddd;
+.page.has-form .list-panel {
+  height: calc(100vh - 53px);
   overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid #ddd;
 }
 
 .list-toolbar.is-refreshing,
@@ -468,12 +484,25 @@ watch(
 }
 
 .form-panel {
-  flex: 0 0 50%;
-  max-width: 50%;
   min-width: 0;
+  height: calc(100vh - 53px);
   overflow-y: auto;
   background: #f4f5f7;
-  transition: flex 0.2s ease, max-width 0.2s ease;
+}
+
+.page.has-form .filters {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.page.has-form .filters > * {
+  flex-shrink: 0;
+}
+
+.page.has-form .filter-search {
+  width: 180px;
+  min-width: 180px;
 }
 
 .top {
@@ -496,25 +525,6 @@ h1 {
   margin-bottom: 16px;
 }
 
-.filters.compact .filter-search {
-  flex: 1 1 100%;
-  min-width: 0;
-}
-
-.filters.compact input,
-.filters.compact select {
-  flex: 1 1 calc(50% - 4px);
-  min-width: 0;
-}
-
-.filters.compact .check {
-  flex: 1 1 100%;
-}
-
-.filters.compact .btn-secondary {
-  flex: 1 1 100%;
-}
-
 .filters input,
 .filters select {
   padding: 7px 10px;
@@ -523,7 +533,12 @@ h1 {
   font-size: 0.9rem;
 }
 
-.filters:not(.compact) .filter-search {
+.filter-search {
+  min-width: 200px;
+  flex: 1 1 220px;
+}
+
+.page:not(.has-form) .filter-search {
   min-width: 200px;
   flex: 1 1 220px;
 }
@@ -673,6 +688,7 @@ h1 {
 
 .product-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
@@ -748,6 +764,14 @@ h1 {
 
 .no-img {
   color: #999;
+}
+
+.name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .name-text {

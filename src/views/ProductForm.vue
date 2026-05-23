@@ -9,6 +9,7 @@ import {
 } from '../services/products'
 import { notifyUnreadCountRefresh } from '../services/notifications'
 import { productImageUrl } from '../utils/productImage'
+import { sessionUser } from '../services/token'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,6 +32,7 @@ const fileInput = ref(null)
 const saveMenuOpen = ref(false)
 const saveMenuRef = ref(null)
 const refreshProducts = inject('refreshProducts', null)
+const editForbidden = ref(false)
 
 const DESCRIPTION_MAX = 500
 
@@ -45,6 +47,7 @@ function resetForm() {
   imageFiles.value = []
   clearPendingPreviews()
   error.value = ''
+  editForbidden.value = false
 }
 
 function clearPendingPreviews() {
@@ -115,8 +118,17 @@ async function loadProduct() {
   try {
     const p = await fetchProduct(route.params.id)
     applyProduct(p)
+    const user = sessionUser.value
+    if (!user?.is_super_admin && p.user_id !== user?.id) {
+      editForbidden.value = true
+      error.value = 'You can only edit your own products.'
+    }
   } catch (e) {
-    error.value = e.response?.data?.message || 'Record not found.'
+    if (e.response?.status === 403) {
+      error.value = 'You can only edit your own products.'
+    } else {
+      error.value = e.response?.data?.message || 'Record not found.'
+    }
   } finally {
     loading.value = false
   }
@@ -167,7 +179,11 @@ async function onSubmit(closeAfter = false) {
 
     notifyUnreadCountRefresh()
   } catch (e) {
-    error.value = e.response?.data?.message || 'Could not save product.'
+    if (e.response?.status === 403) {
+      error.value = 'You can only edit your own products.'
+    } else {
+      error.value = e.response?.data?.message || 'Could not save product.'
+    }
   } finally {
     saving.value = false
   }
@@ -218,7 +234,7 @@ function onSaveMenuOutside(event) {
 
 const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
 
-const formDisabled = computed(() => loading.value || saving.value)
+const formDisabled = computed(() => loading.value || saving.value || editForbidden.value)
 
 const saveLabel = computed(() => (isEdit.value ? 'Update' : 'Create'))
 const saveAndCloseLabel = computed(() =>

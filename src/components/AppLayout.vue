@@ -1,9 +1,18 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { logout } from '../services/auth'
+import { sessionUser } from '../services/token'
 import NotificationBell from './NotificationBell.vue'
 
 const router = useRouter()
+
+const currentUser = sessionUser
+
+const welcomeName = computed(() => {
+  const name = sessionUser.value?.name?.trim()
+  return name || sessionUser.value?.email || 'User'
+})
 
 async function handleLogout() {
   await logout()
@@ -16,6 +25,10 @@ async function handleLogout() {
     <header>
       <router-link to="/products" class="brand">PRODUCT MANAGEMENT SYSTEM</router-link>
       <div class="header-actions">
+        <p class="welcome">
+          Welcome, <span class="welcome-name">{{ welcomeName }}</span>
+          <span v-if="currentUser?.is_super_admin" class="role-badge">Super admin</span>
+        </p>
         <NotificationBell />
         <button type="button" class="logout" @click="handleLogout">Log out</button>
       </div>
@@ -50,7 +63,31 @@ header {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.welcome {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.welcome-name {
+  font-weight: 600;
+  color: #222;
+}
+
+.role-badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #7c3aed;
+  background: #ede9fe;
+  border-radius: 999px;
+  vertical-align: middle;
 }
 
 .logout {

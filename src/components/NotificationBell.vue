@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchUnreadCount,
@@ -10,6 +10,7 @@ import {
   subscribeUnreadCountRefresh,
 } from '../services/notifications'
 import ConfirmModal from './ConfirmModal.vue'
+import { sessionUser } from '../services/token'
 
 const router = useRouter()
 const route = useRoute()
@@ -21,6 +22,32 @@ const loading = ref(false)
 const clearConfirmOpen = ref(false)
 const clearing = ref(false)
 const actionError = ref('')
+
+const isSuperAdmin = computed(() => Boolean(sessionUser.value?.is_super_admin))
+
+function canMarkRead(notification) {
+  if (!notification) return false
+  if (isSuperAdmin.value) return true
+  const uid = sessionUser.value?.id
+  return uid != null && notification.product?.user_id === uid
+}
+
+function canManageProduct(notification) {
+  if (!notification?.product) return false
+  if (isSuperAdmin.value) return true
+  const uid = sessionUser.value?.id
+  return uid != null && notification.product.user_id === uid
+}
+
+function alertOwnerLabel(notification) {
+  const uid = sessionUser.value?.id
+  if (notification.product?.user_id === uid) return 'Your product'
+  return notification.product?.user?.name?.trim() || 'Another user'
+}
+
+const actionableUnreadCount = computed(() =>
+  notifications.value.filter((n) => !n.is_read && canMarkRead(n)).length
+)
 
 async function refreshCount() {
   try {
@@ -64,18 +91,29 @@ function formatTime(iso) {
 }
 
 async function onItemClick(notification) {
-  if (!notification.is_read) {
+  actionError.value = ''
+
+  if (!notification.is_read && canMarkRead(notification)) {
     try {
       await markAsRead(notification.id)
       notification.is_read = true
-      unreadCount.value = Math.max(0, unreadCount.value - 1)
-    } catch {
-      /* still navigate on failure */
+      await refreshCount()
+    } catch (e) {
+      actionError.value =
+        e.response?.status === 403
+          ? 'You can only mark your own product alerts as read.'
+          : 'Could not mark alert as read.'
+      return
     }
   }
+
   open.value = false
   if (notification.product_id) {
-    router.push(`/products/${notification.product_id}/edit`)
+    if (canManageProduct(notification)) {
+      router.push(`/products/${notification.product_id}/edit`)
+    } else {
+      router.push({ name: 'products' })
+    }
   }
 }
 
@@ -83,12 +121,12 @@ async function onMarkAll() {
   actionError.value = ''
   try {
     await markAllAsRead()
-    notifications.value.forEach((n) => {
-      n.is_read = true
-    })
-    unreadCount.value = 0
-  } catch {
-    actionError.value = 'Could not mark all as read.'
+    await Promise.all([loadList(), refreshCount()])
+  } catch (e) {
+    actionError.value =
+      e.response?.status === 403
+        ? 'You can only mark your own product alerts as read.'
+        : 'Could not mark alerts as read.'
   }
 }
 
@@ -108,8 +146,11 @@ async function onClearConfirm() {
     notifications.value = []
     unreadCount.value = 0
     clearConfirmOpen.value = false
-  } catch {
-    actionError.value = 'Could not clear alerts.'
+  } catch (e) {
+    actionError.value =
+      e.response?.status === 403
+        ? 'Only the super admin can clear all alerts.'
+        : 'Could not clear alerts.'
   } finally {
     clearing.value = false
   }
@@ -162,21 +203,21 @@ onUnmounted(() => {
         </div>
         <div class="head-actions">
           <button
-            v-if="unreadCount > 0"
+            v-if="actionableUnreadCount > 0"
             type="button"
             class="head-btn"
             @click="onMarkAll"
           >
-            Mark all read
+            {{ isSuperAdmin ? 'Mark all read' : 'Mark mine read' }}
           </button>
-          <button
-            v-if="notifications.length > 0"
-            type="button"
-            class="head-btn danger"
-            @click="onClearAllClick"
-          >
-            Clear all
-          </button>
+              <button
+                v-if="isSuperAdmin && notifications.length > 0"
+                type="button"
+                class="head-btn danger"
+                @click="onClearAllClick"
+              >
+                Clear all
+              </button>
         </div>
       </div>
 
@@ -189,14 +230,19 @@ onUnmounted(() => {
           v-for="n in notifications"
           :key="n.id"
           class="dropdown-item"
-          :class="{ unread: !n.is_read }"
+          :class="{
+            unread: !n.is_read,
+            readonly: !canMarkRead(n),
+          }"
         >
           <button type="button" class="item-btn" @click="onItemClick(n)">
             <span class="item-top">
               <span v-if="!n.is_read" class="unread-dot" aria-hidden="true" />
               <span v-if="n.product?.name" class="item-product">{{ n.product.name }}</span>
+              <span class="item-owner">{{ alertOwnerLabel(n) }}</span>
             </span>
             <span class="item-text">{{ n.message }}</span>
+            <span v-if="!canMarkRead(n) && !n.is_read" class="item-hint">View only — another user’s product</span>
             <span class="item-time">{{ formatTime(n.created_at) }}</span>
           </button>
         </li>
@@ -365,6 +411,33 @@ onUnmounted(() => {
   background: #fffbeb;
 }
 
+.dropdown-item.readonly.unread {
+  background: #f9fafb;
+}
+
+.item-owner {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.dropdown-item.readonly .item-owner {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.item-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
 .item-btn {
   display: block;
   width: 100%;
@@ -387,6 +460,7 @@ onUnmounted(() => {
 .item-top {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 4px;
 }

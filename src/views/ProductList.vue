@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchProducts, deleteProduct, productListAction } from '../services/products'
+import { sessionUser } from '../services/token'
 import { productImageUrl } from '../utils/productImage'
 import ConfirmModal from '../components/ConfirmModal.vue'
 
@@ -10,6 +11,7 @@ const defaultFilters = () => ({
   min_price: '',
   max_price: '',
   low_stock: false,
+  mine: false,
   sort: 'created_at',
   order: 'desc',
   rows: 10,
@@ -77,20 +79,35 @@ async function onConfirmOk() {
   try {
     await fn()
     closeConfirm()
-  } catch {
+  } catch (e) {
     confirmModal.value.loading = false
-    error.value = 'Action failed. Please try again.'
+    error.value =
+      e.response?.status === 403
+        ? e.response?.data?.message || 'You do not have permission for this action.'
+        : 'Action failed. Please try again.'
     closeConfirm()
   }
 }
 
 let searchTimer = null
 
-const allPageSelected = computed(
-  () =>
-    products.value.length > 0 &&
-    products.value.every((p) => selectedIds.value.includes(p.id))
-)
+const isSuperAdmin = computed(() => Boolean(sessionUser.value?.is_super_admin))
+
+function canManageProduct(product) {
+  if (!product) return false
+  if (isSuperAdmin.value) return true
+  const uid = sessionUser.value?.id
+  return uid != null && product.user_id === uid
+}
+
+function manageableOnPage() {
+  return products.value.filter((p) => canManageProduct(p))
+}
+
+const allPageSelected = computed(() => {
+  const pageIds = manageableOnPage().map((p) => p.id)
+  return pageIds.length > 0 && pageIds.every((id) => selectedIds.value.includes(id))
+})
 
 const somePageSelected = computed(
   () => selectedIds.value.length > 0 && !allPageSelected.value
@@ -108,6 +125,8 @@ function buildParams() {
   if (!params.max_price) delete params.max_price
   if (!params.low_stock) delete params.low_stock
   else params.low_stock = 1
+  if (!params.mine) delete params.mine
+  else params.mine = 1
   return params
 }
 
@@ -283,11 +302,16 @@ function toggleSelect(id) {
 }
 
 function toggleSelectAll() {
-  if (allPageSelected.value) {
-    const pageIds = products.value.map((p) => p.id)
+  const pageIds = manageableOnPage().map((p) => p.id)
+  if (pageIds.length === 0) return
+
+  const allManagedSelected =
+    pageIds.length > 0 && pageIds.every((id) => selectedIds.value.includes(id))
+
+  if (allManagedSelected) {
     selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id))
   } else {
-    const merged = new Set([...selectedIds.value, ...products.value.map((p) => p.id)])
+    const merged = new Set([...selectedIds.value, ...pageIds])
     selectedIds.value = [...merged]
   }
 }
@@ -389,6 +413,7 @@ watch(
     filters.value.order,
     filters.value.rows,
     filters.value.low_stock,
+    filters.value.mine,
   ],
   applyFilters
 )
@@ -448,6 +473,10 @@ watch(
           <input v-model="filters.low_stock" type="checkbox" />
           Low stock
         </label>
+        <label class="check">
+          <input v-model="filters.mine" type="checkbox" />
+          Added by me
+        </label>
         <select v-model="filters.sort">
           <option value="created_at">Newest</option>
           <option value="name">Name</option>
@@ -467,9 +496,18 @@ watch(
         <button type="button" class="btn-reset" @click="resetFilters">Reset</button>
       </div>
 
-      <p v-if="error" class="error">{{ error }}</p>
-      <p v-else-if="loading && products.length === 0">Loading...</p>
-      <p v-else-if="products.length === 0">No products found.</p>
+      <div
+        v-if="
+          error ||
+          (loading && products.length === 0) ||
+          (!loading && products.length === 0)
+        "
+        class="list-state"
+      >
+        <p v-if="error" class="error">{{ error }}</p>
+        <p v-else-if="loading" class="state-msg">Loading...</p>
+        <p v-else class="state-msg">No products found.</p>
+      </div>
 
       <template v-else>
         <div class="table-wrap" :class="{ 'is-refreshing': refreshing }">
@@ -511,15 +549,16 @@ watch(
                   >
                     Delete selected
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    class="danger"
-                    :disabled="bulkActionLoading"
-                    @click="onDeleteAll"
-                  >
-                    Delete all products
-                  </button>
+              <button
+                v-if="isSuperAdmin"
+                type="button"
+                role="menuitem"
+                class="danger"
+                :disabled="bulkActionLoading"
+                @click="onDeleteAll"
+              >
+                Delete all products
+              </button>
                 </div>
               </div>
             </div>
@@ -562,6 +601,7 @@ watch(
                   <input
                     type="checkbox"
                     :checked="isSelected(p.id)"
+                    :disabled="!canManageProduct(p)"
                     :aria-label="`Select ${p.name}`"
                     @change="toggleSelect(p.id)"
                   />
@@ -608,12 +648,15 @@ watch(
                 <td class="col-stock">{{ p.stock_quantity }}</td>
                 <td v-if="!showForm" class="col-created">{{ creatorName(p) }}</td>
                 <td class="col-action">
-                  <router-link :to="`/products/${p.id}/edit`" class="btn-edit">
-                    Edit
-                  </router-link>
-                  <button type="button" class="btn-delete" @click="onDelete(p.id)">
-                    Delete
-                  </button>
+                  <template v-if="canManageProduct(p)">
+                    <router-link :to="`/products/${p.id}/edit`" class="btn-edit">
+                      Edit
+                    </router-link>
+                    <button type="button" class="btn-delete" @click="onDelete(p.id)">
+                      Delete
+                    </button>
+                  </template>
+                  <span v-else class="action-view-only">View only</span>
                 </td>
               </tr>
             </tbody>
@@ -735,9 +778,32 @@ watch(
 }
 
 .list-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: calc(100vh - 53px);
   padding: 8px 16px 24px;
   box-sizing: border-box;
+}
+
+.list-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.list-state .state-msg {
+  margin: 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.list-state .error {
+  margin: 0;
 }
 
 .page.has-form .list-panel {
@@ -1400,6 +1466,11 @@ watch(
   background: #fef3f2;
 }
 
+.action-view-only {
+  font-size: 0.8rem;
+  color: #888;
+}
+
 .low-banner {
   display: inline-block;
   width: fit-content;
@@ -1443,9 +1514,5 @@ watch(
 
 .error {
   color: #b42318;
-}
-
-.empty {
-  color: #666;
 }
 </style>

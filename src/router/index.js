@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isLoggedIn } from '../services/token'
+import { refreshCurrentUser } from '../services/auth'
 
 const routes = [
   {
@@ -46,12 +47,16 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const loggedIn = isLoggedIn()
   const needsAuth = to.matched.some((r) => r.meta.requiresAuth)
 
   if (needsAuth && !loggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (needsAuth && loggedIn) {
+    await refreshCurrentUser()
   }
 
   if (to.meta.guest && loggedIn) {

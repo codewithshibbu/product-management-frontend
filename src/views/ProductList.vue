@@ -115,6 +115,17 @@ function isSelected(id) {
   return selectedIds.value.includes(id)
 }
 
+function firstImageUrl(product) {
+  return product.images?.[0]?.url ?? null
+}
+
+function isLowStock(product) {
+  if (product.is_low_stock != null) {
+    return Boolean(product.is_low_stock)
+  }
+  return product.stock_quantity <= product.low_stock_threshold
+}
+
 function toggleSelect(id) {
   if (isSelected(id)) {
     selectedIds.value = selectedIds.value.filter((sid) => sid !== id)
@@ -224,7 +235,7 @@ watch(
   <div class="page" :class="{ 'is-split': showForm }">
     <section class="list-panel" :class="{ half: showForm }">
       <div class="top">
-        <h1>Products</h1>
+        <h1></h1>
         <router-link to="/products/new" class="btn">Add product</router-link>
       </div>
 
@@ -328,32 +339,64 @@ watch(
           </div>
         </div>
 
-        <ul class="list">
-        <li
-          v-for="p in products"
-          :key="p.id"
-          class="item"
-          :class="{ active: activeProductId === p.id, selected: isSelected(p.id) }"
-        >
-          <label class="row-check">
-            <input
-              type="checkbox"
-              :checked="isSelected(p.id)"
-              @change="toggleSelect(p.id)"
-            />
-          </label>
-          <div class="item-main">
-            <strong>{{ p.name }}</strong>
-            <span>${{ Number(p.price).toFixed(2) }}</span>
-            <span> · Stock {{ p.stock_quantity }}</span>
-            <span v-if="p.is_low_stock" class="low"> · Low stock</span>
-          </div>
-          <div class="actions">
-            <router-link :to="`/products/${p.id}/edit`" class="edit">Edit</router-link>
-            <button type="button" class="delete" @click="onDelete(p.id)">Delete</button>
-          </div>
-        </li>
-      </ul>
+        <div class="table-wrap">
+          <table class="product-table">
+            <thead>
+              <tr>
+                <th class="col-check" scope="col">
+                  <span class="sr-only">Select</span>
+                </th>
+                <th scope="col">Images</th>
+                <th scope="col">Product Name</th>
+                <th scope="col">Price</th>
+                <th scope="col">Stock</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="p in products"
+                :key="p.id"
+                :class="{
+                  active: activeProductId === p.id,
+                  selected: isSelected(p.id),
+                }"
+              >
+                <td class="col-check">
+                  <input
+                    type="checkbox"
+                    :checked="isSelected(p.id)"
+                    :aria-label="`Select ${p.name}`"
+                    @change="toggleSelect(p.id)"
+                  />
+                </td>
+                <td class="col-image">
+                  <img
+                    v-if="firstImageUrl(p)"
+                    :src="firstImageUrl(p)"
+                    :alt="p.name"
+                    class="thumb"
+                  />
+                  <span v-else class="no-img">—</span>
+                </td>
+                <td class="col-name">
+                  <span class="name-text">{{ p.name }}</span>
+                  <span v-if="p.is_low_stock" class="low-badge">Low stock</span>
+                </td>
+                <td class="col-price">${{ Number(p.price).toFixed(2) }}</td>
+                <td class="col-stock">{{ p.stock_quantity }}</td>
+                <td class="col-action">
+                  <router-link :to="`/products/${p.id}/edit`" class="btn-edit">
+                    Edit
+                  </router-link>
+                  <button type="button" class="btn-delete" @click="onDelete(p.id)">
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <div v-if="meta.last_page > 1" class="pager">
@@ -396,7 +439,7 @@ watch(
 .list-panel {
   flex: 1;
   min-width: 0;
-  padding: 24px;
+  padding: 8px;
 }
 
 .list-panel.half {
@@ -590,16 +633,151 @@ h1 {
   border-top: 1px solid #eee;
 }
 
-.row-check {
-  display: flex;
-  align-items: flex-start;
-  padding-top: 2px;
-  flex-shrink: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.list li.item.selected {
-  border-color: #93b4ff;
+.table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+.product-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.product-table th,
+.product-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+
+.product-table thead th {
+  background: #f8f9fb;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.85rem;
+}
+
+.product-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.product-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+.product-table tbody tr.selected {
   background: #f8faff;
+}
+
+.product-table tbody tr.active {
+  background: #eef4ff;
+  box-shadow: inset 3px 0 0 #2d5bff;
+}
+
+.col-check {
+  width: 40px;
+  text-align: center;
+}
+
+.col-image {
+  width: 72px;
+}
+
+.col-name {
+  white-space: normal;
+  min-width: 140px;
+}
+
+.col-price {
+  width: 90px;
+}
+
+.col-stock {
+  width: 70px;
+}
+
+.col-action {
+  width: 160px;
+  white-space: nowrap;
+}
+
+.thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  border: 1px solid #e5e5e5;
+}
+
+.no-img {
+  color: #999;
+}
+
+.name-text {
+  font-weight: 600;
+  color: #222;
+}
+
+.low-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.btn-edit,
+.btn-delete {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+  margin-right: 6px;
+}
+
+.btn-edit {
+  color: #2d5bff;
+  border-color: #2d5bff;
+  background: #fff;
+}
+
+.btn-edit:hover {
+  background: #eef2ff;
+}
+
+.btn-delete {
+  color: #b42318;
+  border-color: #f5c4c0;
+  background: #fff;
+}
+
+.btn-delete:hover {
+  background: #fef3f2;
 }
 
 .low-banner {
@@ -610,65 +788,6 @@ h1 {
   border-radius: 6px;
   color: #9a3412;
   font-size: 0.9rem;
-}
-
-.list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.list li.item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
-}
-
-.list li.item.active {
-  border-color: #2d5bff;
-  box-shadow: 0 0 0 1px #2d5bff;
-}
-
-.item-main {
-  min-width: 0;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.item-main strong {
-  display: block;
-  margin-bottom: 2px;
-}
-
-.actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 10px;
-  font-size: 0.85rem;
-}
-
-.edit {
-  color: #2d5bff;
-  text-decoration: none;
-}
-
-.delete {
-  border: none;
-  background: none;
-  color: #b42318;
-  cursor: pointer;
-  padding: 0;
-}
-
-.low {
-  color: #c2410c;
-  font-weight: 600;
 }
 
 .pager {

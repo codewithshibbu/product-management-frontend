@@ -1,27 +1,30 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { login } from '../services/auth'
-
-const router = useRouter()
-const route = useRoute()
+import { ref } from 'vue'
+import { requestPasswordReset } from '../services/auth'
 
 const email = ref('')
-const password = ref('')
 const loading = ref(false)
 const error = ref('')
-const resetSuccess = computed(() => route.query.reset === 'success')
+const success = ref('')
+
+function getErrorMessage(e) {
+  const data = e.response?.data
+  if (!data) return 'Something went wrong. Try again.'
+  if (data.message) return data.message
+  const first = data.errors && Object.values(data.errors).flat()[0]
+  return first || 'Something went wrong. Try again.'
+}
 
 async function onSubmit() {
   error.value = ''
+  success.value = ''
   loading.value = true
 
   try {
-    await login(email.value, password.value)
-    const redirect = route.query.redirect || '/products'
-    router.push(redirect)
+    const data = await requestPasswordReset(email.value)
+    success.value = data.message || 'Check your email for a reset link.'
   } catch (e) {
-    error.value = e.response?.data?.message || 'Something went wrong. Try again.'
+    error.value = getErrorMessage(e)
   } finally {
     loading.value = false
   }
@@ -29,47 +32,32 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="login-page">
-    <form class="login-box" @submit.prevent="onSubmit">
-      <h1>Sign in</h1>
-      <p class="sub">Product management</p>
+  <div class="auth-page">
+    <form class="auth-box" @submit.prevent="onSubmit">
+      <h1>Forgot password</h1>
+      <p class="sub">Enter your email and we will send a reset link.</p>
 
       <label>
         Email
         <input v-model="email" type="email" required autocomplete="email" />
       </label>
 
-      <label>
-        Password
-        <input
-          v-model="password"
-          type="password"
-          required
-          autocomplete="current-password"
-        />
-      </label>
-
-      <p v-if="resetSuccess" class="success">Password updated. Sign in with your new password.</p>
       <p v-if="error" class="error">{{ error }}</p>
-
-      <p class="forgot">
-        <router-link to="/forgot-password">Forgot password?</router-link>
-      </p>
+      <p v-if="success" class="success">{{ success }}</p>
 
       <button type="submit" :disabled="loading">
-        {{ loading ? 'Signing in…' : 'Sign in' }}
+        {{ loading ? 'Sending…' : 'Send reset link' }}
       </button>
 
       <p class="footer">
-        No account yet?
-        <router-link to="/register">Sign up</router-link>
+        <router-link to="/login">Back to sign in</router-link>
       </p>
     </form>
   </div>
 </template>
 
 <style scoped>
-.login-page {
+.auth-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -78,7 +66,7 @@ async function onSubmit() {
   background: #f4f5f7;
 }
 
-.login-box {
+.auth-box {
   width: 100%;
   max-width: 360px;
   background: #fff;
@@ -136,21 +124,6 @@ input:focus {
   font-size: 0.9rem;
 }
 
-.forgot {
-  margin: 0 0 12px;
-  text-align: right;
-  font-size: 0.85rem;
-}
-
-.forgot a {
-  color: #2d5bff;
-  text-decoration: none;
-}
-
-.forgot a:hover {
-  text-decoration: underline;
-}
-
 button {
   width: 100%;
   padding: 11px;
@@ -175,7 +148,6 @@ button:hover:not(:disabled) {
   margin: 16px 0 0;
   text-align: center;
   font-size: 0.9rem;
-  color: #666;
 }
 
 .footer a {

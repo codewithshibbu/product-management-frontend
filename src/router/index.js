@@ -16,6 +16,18 @@ const routes = [
     meta: { guest: true },
   },
   {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: () => import('../views/ForgotPassword.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/reset-password',
+    name: 'reset-password',
+    component: () => import('../views/ResetPassword.vue'),
+    meta: { guest: true },
+  },
+  {
     path: '/',
     component: () => import('../components/AppLayout.vue'),
     meta: { requiresAuth: true },
@@ -59,7 +71,7 @@ router.beforeEach(async (to) => {
     await refreshCurrentUser()
   }
 
-  if (to.meta.guest && loggedIn) {
+  if (loggedIn && (to.name === 'login' || to.name === 'register')) {
     return { name: 'products' }
   }
 })

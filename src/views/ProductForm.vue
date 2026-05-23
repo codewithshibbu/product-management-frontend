@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchProduct,
@@ -7,6 +7,7 @@ import {
   updateProduct,
   buildProductFormData,
 } from '../services/products'
+import { notifyUnreadCountRefresh } from '../services/notifications'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +28,7 @@ const error = ref('')
 const fileInput = ref(null)
 const saveMenuOpen = ref(false)
 const saveMenuRef = ref(null)
+const refreshProducts = inject('refreshProducts', null)
 
 function resetForm() {
   name.value = ''
@@ -64,40 +66,36 @@ function isRemoved(imageId) {
   return removeImageIds.value.includes(imageId)
 }
 
+function applyProduct(p) {
+  name.value = p.name
+  description.value = p.description || ''
+  price.value = p.price
+  stockQuantity.value = p.stock_quantity
+  lowStockThreshold.value = p.low_stock_threshold
+  existingImages.value = p.images || []
+  removeImageIds.value = []
+  imageFiles.value = []
+  clearFileInput()
+}
+
 async function loadProduct() {
   if (!isEdit.value) {
     resetForm()
+    loading.value = false
     return
   }
+
+  resetForm()
   loading.value = true
   error.value = ''
   try {
     const p = await fetchProduct(route.params.id)
-    name.value = p.name
-    description.value = p.description || ''
-    price.value = p.price
-    stockQuantity.value = p.stock_quantity
-    lowStockThreshold.value = p.low_stock_threshold
-    existingImages.value = p.images || []
-    removeImageIds.value = []
-    imageFiles.value = []
-    clearFileInput()
+    applyProduct(p)
   } catch (e) {
     error.value = e.response?.data?.message || 'Record not found.'
   } finally {
     loading.value = false
   }
-}
-
-function refreshList() {
-  const query = { ...route.query }
-  delete query.refresh
-  query.refresh = String(Date.now())
-  router.replace({
-    name: route.name,
-    params: route.params,
-    query,
-  })
 }
 
 async function onSubmit(closeAfter = false) {
@@ -124,7 +122,7 @@ async function onSubmit(closeAfter = false) {
         router.push({ name: 'products', query: { refresh: '1' } })
       } else {
         await loadProduct()
-        refreshList()
+        refreshProducts?.()
       }
     } else {
       await createProduct(formData)
@@ -133,9 +131,11 @@ async function onSubmit(closeAfter = false) {
       } else {
         resetForm()
         clearFileInput()
-        refreshList()
+        refreshProducts?.()
       }
     }
+
+    notifyUnreadCountRefresh()
   } catch (e) {
     error.value = e.response?.data?.message || 'Could not save product.'
   } finally {
@@ -188,6 +188,8 @@ function onSaveMenuOutside(event) {
 
 const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
 
+const formDisabled = computed(() => loading.value || saving.value)
+
 const saveLabel = computed(() => (isEdit.value ? 'Update' : 'Create'))
 const saveAndCloseLabel = computed(() =>
   isEdit.value ? 'Update And Close' : 'Create And Close'
@@ -211,20 +213,20 @@ watch(() => route.name, loadProduct)
     <div class="panel-head">
       <h2>{{ isEdit ? 'Edit product' : 'New product' }}</h2>
       <div class="panel-actions">
-        <div v-if="!loading" ref="saveMenuRef" class="save-dropdown">
+        <div ref="saveMenuRef" class="save-dropdown">
           <div class="save-split">
             <button
               type="button"
               class="btn-save-main"
-              :disabled="saving"
+              :disabled="formDisabled"
               @click="onSubmit(false)"
             >
-              {{ saving ? 'Saving...' : saveLabel }}
+              {{ saving ? 'Saving...' : loading && isEdit ? 'Loading...' : saveLabel }}
             </button>
             <button
               type="button"
               class="btn-save-caret"
-              :disabled="saving"
+              :disabled="formDisabled"
               aria-label="More save options"
               @click.stop="toggleSaveMenu"
             >
@@ -232,15 +234,15 @@ watch(() => route.name, loadProduct)
             </button>
           </div>
           <div v-if="saveMenuOpen" class="save-menu" @click.stop>
-            <button type="button" :disabled="saving" @click="onSubmit(false)">
+            <button type="button" :disabled="formDisabled" @click="onSubmit(false)">
               {{ saveLabel }}
             </button>
-            <button type="button" :disabled="saving" @click="onSubmit(true)">
+            <button type="button" :disabled="formDisabled" @click="onSubmit(true)">
               {{ saveAndCloseLabel }}
             </button>
             <template v-if="!isEdit">
-              <button type="button" class="menu-extra" @click="onFillDummy">
-                Fill 
+              <button type="button" class="menu-extra" :disabled="loading" @click="onFillDummy">
+                Fill dummy data
               </button>
               <button type="button" class="menu-extra" @click="onResetClick">
                 Reset
@@ -256,32 +258,54 @@ watch(() => route.name, loadProduct)
       </div>
     </div>
 
-    <p v-if="loading">Loading...</p>
-
-    <form v-else id="product-form" class="form" @submit.prevent="onSubmit(false)">
+    <form
+      id="product-form"
+      class="form"
+      :class="{ 'is-loading': loading && isEdit }"
+      @submit.prevent="onSubmit(false)"
+    >
       <label>
         Name
-        <input v-model="name" type="text" required />
+        <input v-model="name" type="text" required :disabled="loading && isEdit" />
       </label>
 
       <label>
         Description
-        <textarea v-model="description" rows="3" />
+        <textarea v-model="description" rows="3" :disabled="loading && isEdit" />
       </label>
 
       <label>
         Price
-        <input v-model="price" type="number" min="0" step="0.01" required />
+        <input
+          v-model="price"
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          :disabled="loading && isEdit"
+        />
       </label>
 
       <label>
         Stock quantity
-        <input v-model.number="stockQuantity" type="number" min="0" required />
+        <input
+          v-model.number="stockQuantity"
+          type="number"
+          min="0"
+          required
+          :disabled="loading && isEdit"
+        />
       </label>
 
       <label>
         Low stock threshold
-        <input v-model.number="lowStockThreshold" type="number" min="0" required />
+        <input
+          v-model.number="lowStockThreshold"
+          type="number"
+          min="0"
+          required
+          :disabled="loading && isEdit"
+        />
       </label>
 
       <p v-if="isLowStock" class="low-hint">Stock is at or below the alert level.</p>
@@ -294,11 +318,18 @@ watch(() => route.name, loadProduct)
             v-if="!isRemoved(img.id)"
             type="button"
             class="remove-btn"
+            :disabled="loading"
             @click="markRemove(img.id)"
           >
             Remove
           </button>
-          <button v-else type="button" class="remove-btn" @click="unmarkRemove(img.id)">
+          <button
+            v-else
+            type="button"
+            class="remove-btn"
+            :disabled="loading"
+            @click="unmarkRemove(img.id)"
+          >
             Undo
           </button>
         </div>
@@ -311,6 +342,7 @@ watch(() => route.name, loadProduct)
           type="file"
           accept="image/*"
           multiple
+          :disabled="loading && isEdit"
           @change="onFileChange"
         />
       </label>
@@ -464,10 +496,17 @@ h2 {
 }
 
 .form {
+  position: relative;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 20px;
+}
+
+.form input:disabled,
+.form textarea:disabled {
+  background: #f9fafb;
+  cursor: wait;
 }
 
 label {

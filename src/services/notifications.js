@@ -1,5 +1,16 @@
 import api from '../api/axios'
 
+const unreadRefreshListeners = new Set()
+
+export function subscribeUnreadCountRefresh(callback) {
+  unreadRefreshListeners.add(callback)
+  return () => unreadRefreshListeners.delete(callback)
+}
+
+export function notifyUnreadCountRefresh() {
+  unreadRefreshListeners.forEach((callback) => callback())
+}
+
 export async function fetchUnreadCount() {
   const { data } = await api.get('/notifications/unread-count')
   return data

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchProducts, deleteProduct, productListAction } from '../services/products'
 
@@ -239,6 +239,8 @@ function onBulkMenuOutside(event) {
   }
 }
 
+provide('refreshProducts', () => loadProducts())
+
 onMounted(() => {
   loadProducts()
   document.addEventListener('click', onBulkMenuOutside)
@@ -271,19 +273,6 @@ watch(
   }
 )
 
-watch(
-  () => route.query.refresh,
-  (refresh) => {
-    if (!refresh) return
-    if (route.name !== 'product-create' && route.name !== 'product-edit') return
-
-    loadProducts().finally(() => {
-      const query = { ...route.query }
-      delete query.refresh
-      router.replace({ name: route.name, params: route.params, query })
-    })
-  }
-)
 </script>
 
 <template>

@@ -6,6 +6,7 @@ import {
   fetchNotifications,
   markAsRead,
   markAllAsRead,
+  subscribeUnreadCountRefresh,
 } from '../services/notifications'
 
 const router = useRouter()
@@ -78,16 +79,28 @@ function onClickOutside(event) {
   }
 }
 
+let unsubscribeUnreadRefresh = null
+
 onMounted(() => {
   refreshCount()
+  unsubscribeUnreadRefresh = subscribeUnreadCountRefresh(refreshCount)
   document.addEventListener('click', onClickOutside)
 })
 
-watch(() => route.fullPath, () => {
-  refreshCount()
-})
+watch(
+  () => route.name,
+  (name, prev) => {
+    if (
+      name === 'products' &&
+      (prev === 'product-create' || prev === 'product-edit')
+    ) {
+      refreshCount()
+    }
+  }
+)
 
 onUnmounted(() => {
+  unsubscribeUnreadRefresh?.()
   document.removeEventListener('click', onClickOutside)
 })
 </script>

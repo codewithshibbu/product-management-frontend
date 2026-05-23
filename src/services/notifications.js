@@ -30,3 +30,8 @@ export async function markAllAsRead() {
   const { data } = await api.patch('/notifications/read-all')
   return data
 }
+
+export async function clearAllNotifications() {
+  const { data } = await api.delete('/notifications')
+  return data
+}

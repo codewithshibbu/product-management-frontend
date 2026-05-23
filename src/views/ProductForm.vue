@@ -32,6 +32,8 @@ const saveMenuOpen = ref(false)
 const saveMenuRef = ref(null)
 const refreshProducts = inject('refreshProducts', null)
 
+const DESCRIPTION_MAX = 500
+
 function resetForm() {
   name.value = ''
   description.value = ''
@@ -121,6 +123,8 @@ async function loadProduct() {
 }
 
 async function onSubmit(closeAfter = false) {
+  if (saving.value) return
+
   saveMenuOpen.value = false
   error.value = ''
   saving.value = true
@@ -149,17 +153,14 @@ async function onSubmit(closeAfter = false) {
         refreshProducts?.()
       }
     } else {
-      const created = await createProduct(formData)
+      await createProduct(formData)
       if (closeAfter) {
         router.push({ name: 'products', query: { refresh: '1' } })
       } else {
-        clearPendingPreviews()
-        clearFileInput()
-        await router.replace({
-          name: 'product-edit',
-          params: { id: created.id },
-        })
-        applyProduct(created)
+        resetValues()
+        if (route.name !== 'product-create') {
+          await router.replace({ name: 'product-create' })
+        }
         refreshProducts?.()
       }
     }
@@ -301,7 +302,13 @@ watch(() => route.name, loadProduct)
 
       <label>
         Description
-        <textarea v-model="description" rows="3" :disabled="loading && isEdit" />
+        <textarea
+          v-model="description"
+          rows="3"
+          :maxlength="DESCRIPTION_MAX"
+          :disabled="loading && isEdit"
+        />
+        <span class="char-count">{{ description.length }} / {{ DESCRIPTION_MAX }}</span>
       </label>
 
       <label>
@@ -564,6 +571,14 @@ textarea {
   border: 1px solid #ccc;
   border-radius: 4px;
   box-sizing: border-box;
+}
+
+.char-count {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #888;
+  text-align: right;
 }
 
 .images {

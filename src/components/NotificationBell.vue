@@ -6,8 +6,10 @@ import {
   fetchNotifications,
   markAsRead,
   markAllAsRead,
+  clearAllNotifications,
   subscribeUnreadCountRefresh,
 } from '../services/notifications'
+import ConfirmModal from './ConfirmModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -16,6 +18,9 @@ const open = ref(false)
 const unreadCount = ref(0)
 const notifications = ref([])
 const loading = ref(false)
+const clearConfirmOpen = ref(false)
+const clearing = ref(false)
+const actionError = ref('')
 
 async function refreshCount() {
   try {
@@ -28,11 +33,13 @@ async function refreshCount() {
 
 async function loadList() {
   loading.value = true
+  actionError.value = ''
   try {
-    const data = await fetchNotifications({ rows: 15 })
+    const data = await fetchNotifications({ rows: 20 })
     notifications.value = data.data ?? []
   } catch {
     notifications.value = []
+    actionError.value = 'Could not load alerts.'
   } finally {
     loading.value = false
   }
@@ -43,6 +50,17 @@ async function toggleOpen() {
   if (open.value) {
     await Promise.all([loadList(), refreshCount()])
   }
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 async function onItemClick(notification) {
@@ -62,6 +80,7 @@ async function onItemClick(notification) {
 }
 
 async function onMarkAll() {
+  actionError.value = ''
   try {
     await markAllAsRead()
     notifications.value.forEach((n) => {
@@ -69,7 +88,30 @@ async function onMarkAll() {
     })
     unreadCount.value = 0
   } catch {
-    alert('Could not mark all as read.')
+    actionError.value = 'Could not mark all as read.'
+  }
+}
+
+function onClearAllClick() {
+  clearConfirmOpen.value = true
+}
+
+function onClearCancel() {
+  clearConfirmOpen.value = false
+}
+
+async function onClearConfirm() {
+  clearing.value = true
+  actionError.value = ''
+  try {
+    await clearAllNotifications()
+    notifications.value = []
+    unreadCount.value = 0
+    clearConfirmOpen.value = false
+  } catch {
+    actionError.value = 'Could not clear alerts.'
+  } finally {
+    clearing.value = false
   }
 }
 
@@ -108,25 +150,39 @@ onUnmounted(() => {
 <template>
   <div ref="root" class="bell-wrap">
     <button type="button" class="bell-btn" aria-label="Stock notifications" @click.stop="toggleOpen">
-      Alerts
+      <span class="bell-label">Alerts</span>
       <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
 
     <div v-if="open" class="dropdown" @click.stop>
       <div class="dropdown-head">
-        <strong>Low stock alerts</strong>
-        <button
-          v-if="unreadCount > 0"
-          type="button"
-          class="mark-all"
-          @click="onMarkAll"
-        >
-          Mark all read
-        </button>
+        <div class="head-text">
+          <strong>Low stock alerts</strong>
+          <span v-if="unreadCount > 0" class="unread-pill">{{ unreadCount }} unread</span>
+        </div>
+        <div class="head-actions">
+          <button
+            v-if="unreadCount > 0"
+            type="button"
+            class="head-btn"
+            @click="onMarkAll"
+          >
+            Mark all read
+          </button>
+          <button
+            v-if="notifications.length > 0"
+            type="button"
+            class="head-btn danger"
+            @click="onClearAllClick"
+          >
+            Clear all
+          </button>
+        </div>
       </div>
 
+      <p v-if="actionError" class="dropdown-error">{{ actionError }}</p>
       <p v-if="loading" class="dropdown-msg">Loading...</p>
-      <p v-else-if="notifications.length === 0" class="dropdown-msg">No notifications yet.</p>
+      <p v-else-if="notifications.length === 0" class="dropdown-msg">No alerts right now.</p>
 
       <ul v-else class="dropdown-list">
         <li
@@ -136,13 +192,26 @@ onUnmounted(() => {
           :class="{ unread: !n.is_read }"
         >
           <button type="button" class="item-btn" @click="onItemClick(n)">
-            <span v-if="!n.is_read" class="dot" aria-hidden="true" />
+            <span class="item-top">
+              <span v-if="!n.is_read" class="unread-dot" aria-hidden="true" />
+              <span v-if="n.product?.name" class="item-product">{{ n.product.name }}</span>
+            </span>
             <span class="item-text">{{ n.message }}</span>
-            <span v-if="n.product?.name" class="item-product">{{ n.product.name }}</span>
+            <span class="item-time">{{ formatTime(n.created_at) }}</span>
           </button>
         </li>
       </ul>
     </div>
+
+    <ConfirmModal
+      :open="clearConfirmOpen"
+      title="Clear all alerts"
+      message="Remove every alert from the list? This deletes them from the database and cannot be undone."
+      confirm-label="Clear all"
+      :loading="clearing"
+      @confirm="onClearConfirm"
+      @cancel="onClearCancel"
+    />
   </div>
 </template>
 
@@ -153,16 +222,22 @@ onUnmounted(() => {
 
 .bell-btn {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fef3c7;
   cursor: pointer;
   font-size: 0.9rem;
+  font-weight: 600;
+  color: #92400e;
 }
 
 .bell-btn:hover {
-  background: #f9f9f9;
+  background: #fde68a;
+  border-color: #d97706;
 }
 
 .badge {
@@ -173,7 +248,7 @@ onUnmounted(() => {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #c45c00;
+  background: #c2410c;
   color: #fff;
   font-size: 0.7rem;
   font-weight: 600;
@@ -185,63 +260,115 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 320px;
-  max-height: 360px;
-  overflow: auto;
+  width: min(380px, calc(100vw - 32px));
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
   background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
   z-index: 50;
+  overflow: hidden;
 }
 
 .dropdown-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+  background: linear-gradient(180deg, #fffbeb 0%, #fff 100%);
+}
+
+.head-text {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid #eee;
+  margin-bottom: 10px;
 }
 
-.dropdown-head strong {
-  font-size: 0.9rem;
+.head-text strong {
+  font-size: 0.95rem;
+  color: #1f2937;
 }
 
-.mark-all {
-  padding: 4px 8px;
-  border: none;
-  background: none;
-  color: #2563eb;
-  font-size: 0.8rem;
+.unread-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #c2410c;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.head-btn {
+  padding: 5px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  font-size: 0.78rem;
   cursor: pointer;
 }
 
-.mark-all:hover {
-  text-decoration: underline;
+.head-btn:hover {
+  background: #f3f4f6;
+}
+
+.head-btn.danger {
+  border-color: #fecaca;
+  color: #b42318;
+}
+
+.head-btn.danger:hover {
+  background: #fef2f2;
+}
+
+.dropdown-error {
+  margin: 0;
+  padding: 10px 16px;
+  background: #fef2f2;
+  color: #b42318;
+  font-size: 0.8rem;
 }
 
 .dropdown-msg {
   margin: 0;
-  padding: 16px 14px;
-  color: #666;
+  padding: 24px 16px;
+  color: #6b7280;
   font-size: 0.85rem;
+  text-align: center;
 }
 
 .dropdown-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dropdown-item {
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
 }
 
 .dropdown-item.unread {
-  background: #fff8f0;
+  background: #fffbeb;
 }
 
 .item-btn {
   display: block;
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border: none;
   background: none;
   text-align: left;
@@ -250,34 +377,45 @@ onUnmounted(() => {
 }
 
 .item-btn:hover {
-  background: #f4f5f7;
+  background: #f9fafb;
 }
 
 .dropdown-item.unread .item-btn:hover {
-  background: #ffedd5;
+  background: #fef3c7;
+}
+
+.item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ea580c;
+  flex-shrink: 0;
+}
+
+.item-product {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1d4ed8;
 }
 
 .item-text {
   display: block;
-  font-size: 0.85rem;
-  color: #222;
-  line-height: 1.35;
+  font-size: 0.82rem;
+  color: #4b5563;
+  line-height: 1.45;
 }
 
-.item-product {
+.item-time {
   display: block;
-  margin-top: 4px;
-  font-size: 0.8rem;
-  color: #2563eb;
-}
-
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #c45c00;
-  vertical-align: middle;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: #9ca3af;
 }
 </style>

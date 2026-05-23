@@ -55,15 +55,17 @@ header {
 
 .logout {
   padding: 8px 14px;
-  border: 1px solid #ccc;
+  border: 1px solid #b42318;
   border-radius: 6px;
-  background: #fff;
+  background: #dc2626;
+  color: #fff;
   cursor: pointer;
   font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .logout:hover {
-  background: #f9f9f9;
+  background: #b42318;
 }
 
 main {

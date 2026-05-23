@@ -3,6 +3,18 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchProducts, deleteProduct, productListAction } from '../services/products'
 import { productImageUrl } from '../utils/productImage'
+import ConfirmModal from '../components/ConfirmModal.vue'
+
+const defaultFilters = () => ({
+  search: '',
+  min_price: '',
+  max_price: '',
+  low_stock: false,
+  sort: 'created_at',
+  order: 'desc',
+  rows: 10,
+  page: 1,
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -26,16 +38,51 @@ const activeProductId = computed(() =>
   route.name === 'product-edit' ? Number(route.params.id) : null
 )
 
-const filters = ref({
-  search: '',
-  min_price: '',
-  max_price: '',
-  low_stock: false,
-  sort: 'created_at',
-  order: 'desc',
-  rows: 10,
-  page: 1,
+const filters = ref(defaultFilters())
+
+const confirmModal = ref({
+  open: false,
+  title: '',
+  message: '',
+  confirmLabel: 'OK',
+  danger: true,
+  loading: false,
+  action: null,
 })
+
+function openConfirm({ title, message, confirmLabel, danger = true, action }) {
+  confirmModal.value = {
+    open: true,
+    title,
+    message,
+    confirmLabel: confirmLabel || 'OK',
+    danger,
+    loading: false,
+    action,
+  }
+}
+
+function closeConfirm() {
+  confirmModal.value.open = false
+  confirmModal.value.action = null
+}
+
+async function onConfirmOk() {
+  const fn = confirmModal.value.action
+  if (!fn) {
+    closeConfirm()
+    return
+  }
+  confirmModal.value.loading = true
+  try {
+    await fn()
+    closeConfirm()
+  } catch {
+    confirmModal.value.loading = false
+    error.value = 'Action failed. Please try again.'
+    closeConfirm()
+  }
+}
 
 let searchTimer = null
 
@@ -100,6 +147,11 @@ function applyFilters() {
   loadProducts()
 }
 
+function resetFilters() {
+  filters.value = defaultFilters()
+  loadProducts()
+}
+
 function onSearchInput() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(applyFilters, 400)
@@ -111,18 +163,20 @@ function goToPage(page) {
   loadProducts()
 }
 
-async function onDelete(id) {
-  if (!confirm('Delete this product?')) return
-  try {
-    await deleteProduct(id)
-    selectedIds.value = selectedIds.value.filter((sid) => sid !== id)
-    if (products.value.length === 1 && filters.value.page > 1) {
-      filters.value.page--
-    }
-    loadProducts()
-  } catch {
-    alert('Could not delete product.')
-  }
+function onDelete(id) {
+  openConfirm({
+    title: 'Delete product',
+    message: 'Delete this product? This cannot be undone.',
+    confirmLabel: 'Delete',
+    action: async () => {
+      await deleteProduct(id)
+      selectedIds.value = selectedIds.value.filter((sid) => sid !== id)
+      if (products.value.length === 1 && filters.value.page > 1) {
+        filters.value.page--
+      }
+      await loadProducts()
+    },
+  })
 }
 
 function isSelected(id) {
@@ -246,45 +300,58 @@ function closeBulkMenu() {
   bulkMenuOpen.value = false
 }
 
-async function onDeleteSelected() {
+function onDeleteSelected() {
   closeBulkMenu()
   const ids = [...selectedIds.value]
   if (ids.length === 0) {
-    alert('Select at least one product, or use Delete all.')
+    openConfirm({
+      title: 'Nothing selected',
+      message: 'Select at least one product, or use Delete all products.',
+      confirmLabel: 'OK',
+      danger: false,
+      action: async () => {},
+    })
     return
   }
-  if (!confirm(`Delete ${ids.length} selected product(s)?`)) return
 
-  bulkActionLoading.value = true
-  try {
-    await productListAction({ action: 'delete', ids })
-    selectedIds.value = []
-    if (products.value.length <= ids.length && filters.value.page > 1) {
-      filters.value.page--
-    }
-    await loadProducts()
-  } catch {
-    alert('Could not delete selected products.')
-  } finally {
-    bulkActionLoading.value = false
-  }
+  openConfirm({
+    title: 'Delete selected',
+    message: `Delete ${ids.length} selected product(s)? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    action: async () => {
+      bulkActionLoading.value = true
+      try {
+        await productListAction({ action: 'delete', ids })
+        selectedIds.value = []
+        if (products.value.length <= ids.length && filters.value.page > 1) {
+          filters.value.page--
+        }
+        await loadProducts()
+      } finally {
+        bulkActionLoading.value = false
+      }
+    },
+  })
 }
 
-async function onDeleteAll() {
+function onDeleteAll() {
   closeBulkMenu()
-  if (!confirm('Delete ALL products? This cannot be undone.')) return
-
-  bulkActionLoading.value = true
-  try {
-    await productListAction({ action: 'delete-all' })
-    selectedIds.value = []
-    filters.value.page = 1
-    await loadProducts()
-  } catch {
-    alert('Could not delete all products.')
-  } finally {
-    bulkActionLoading.value = false
-  }
+  openConfirm({
+    title: 'Delete all products',
+    message: 'Delete every product in the catalog? This cannot be undone.',
+    confirmLabel: 'Delete all',
+    action: async () => {
+      bulkActionLoading.value = true
+      try {
+        await productListAction({ action: 'delete-all' })
+        selectedIds.value = []
+        filters.value.page = 1
+        await loadProducts()
+      } finally {
+        bulkActionLoading.value = false
+      }
+    },
+  })
 }
 
 function onBulkMenuOutside(event) {
@@ -397,6 +464,7 @@ watch(
           <option :value="30">30</option>
         </select>
         <button type="button" class="btn-secondary" @click="applyFilters">Apply</button>
+        <button type="button" class="btn-reset" @click="resetFilters">Reset</button>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -577,6 +645,17 @@ watch(
     <aside v-if="showForm" class="form-panel">
       <router-view />
     </aside>
+
+    <ConfirmModal
+      :open="confirmModal.open"
+      :title="confirmModal.title"
+      :message="confirmModal.message"
+      :confirm-label="confirmModal.confirmLabel"
+      :danger="confirmModal.danger"
+      :loading="confirmModal.loading"
+      @confirm="onConfirmOk"
+      @cancel="closeConfirm"
+    />
 
     <Teleport to="body">
       <div
@@ -775,6 +854,20 @@ watch(
   border-radius: 4px;
   background: #fff;
   cursor: pointer;
+}
+
+.btn-reset {
+  padding: 7px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f4f5f7;
+  color: #444;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.btn-reset:hover {
+  background: #e8eaef;
 }
 
 .table-bulk-bar {

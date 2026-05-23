@@ -8,6 +8,7 @@ import {
   buildProductFormData,
 } from '../services/products'
 import { notifyUnreadCountRefresh } from '../services/notifications'
+import { productImageUrl } from '../utils/productImage'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ const lowStockThreshold = ref(10)
 const existingImages = ref([])
 const removeImageIds = ref([])
 const imageFiles = ref([])
+const pendingPreviews = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -39,7 +41,21 @@ function resetForm() {
   existingImages.value = []
   removeImageIds.value = []
   imageFiles.value = []
+  clearPendingPreviews()
   error.value = ''
+}
+
+function clearPendingPreviews() {
+  pendingPreviews.value.forEach((preview) => URL.revokeObjectURL(preview.url))
+  pendingPreviews.value = []
+}
+
+function revokePreviewAt(index) {
+  const [removed] = pendingPreviews.value.splice(index, 1)
+  if (removed) {
+    URL.revokeObjectURL(removed.url)
+  }
+  imageFiles.value = imageFiles.value.filter((_, i) => i !== index)
 }
 
 function clearFileInput() {
@@ -49,7 +65,12 @@ function clearFileInput() {
 }
 
 function onFileChange(e) {
+  clearPendingPreviews()
   imageFiles.value = Array.from(e.target.files || [])
+  pendingPreviews.value = imageFiles.value.map((file) => ({
+    name: file.name,
+    url: URL.createObjectURL(file),
+  }))
 }
 
 function markRemove(imageId) {
@@ -75,6 +96,7 @@ function applyProduct(p) {
   existingImages.value = p.images || []
   removeImageIds.value = []
   imageFiles.value = []
+  clearPendingPreviews()
   clearFileInput()
 }
 
@@ -121,16 +143,23 @@ async function onSubmit(closeAfter = false) {
       if (closeAfter) {
         router.push({ name: 'products', query: { refresh: '1' } })
       } else {
+        clearPendingPreviews()
+        clearFileInput()
         await loadProduct()
         refreshProducts?.()
       }
     } else {
-      await createProduct(formData)
+      const created = await createProduct(formData)
       if (closeAfter) {
         router.push({ name: 'products', query: { refresh: '1' } })
       } else {
-        resetForm()
+        clearPendingPreviews()
         clearFileInput()
+        await router.replace({
+          name: 'product-edit',
+          params: { id: created.id },
+        })
+        applyProduct(created)
         refreshProducts?.()
       }
     }
@@ -201,6 +230,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearPendingPreviews()
   document.removeEventListener('click', onSaveMenuOutside)
 })
 
@@ -313,7 +343,7 @@ watch(() => route.name, loadProduct)
       <div v-if="existingImages.length" class="images">
         <p class="img-label">Current images</p>
         <div v-for="img in existingImages" :key="img.id" class="thumb">
-          <img :src="img.url" alt="" :class="{ faded: isRemoved(img.id) }" />
+          <img :src="productImageUrl(img)" alt="" :class="{ faded: isRemoved(img.id) }" />
           <button
             v-if="!isRemoved(img.id)"
             type="button"
@@ -346,6 +376,16 @@ watch(() => route.name, loadProduct)
           @change="onFileChange"
         />
       </label>
+
+      <div v-if="pendingPreviews.length" class="images pending-images">
+        <p class="img-label">New images (preview)</p>
+        <div v-for="(preview, index) in pendingPreviews" :key="preview.url" class="thumb">
+          <img :src="preview.url" :alt="preview.name" />
+          <button type="button" class="remove-btn" @click="revokePreviewAt(index)">
+            Remove
+          </button>
+        </div>
+      </div>
 
       <p v-if="error" class="error">{{ error }}</p>
     </form>
@@ -528,6 +568,10 @@ textarea {
 
 .images {
   margin-bottom: 12px;
+}
+
+.pending-images {
+  margin-top: 8px;
 }
 
 .img-label {

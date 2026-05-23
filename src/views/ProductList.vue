@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchProducts, deleteProduct, productListAction } from '../services/products'
+import { productImageUrl } from '../utils/productImage'
 
 const route = useRoute()
 const router = useRouter()
@@ -128,8 +129,57 @@ function isSelected(id) {
   return selectedIds.value.includes(id)
 }
 
+function productImages(product) {
+  return product.images ?? []
+}
+
 function firstImageUrl(product) {
-  return product.images?.[0]?.url ?? null
+  return productImageUrl(productImages(product)[0])
+}
+
+function extraImageCount(product) {
+  const count = productImages(product).length
+  return count > 1 ? count - 1 : 0
+}
+
+const imageModalProduct = ref(null)
+const enlargedImageIndex = ref(0)
+
+const modalImages = computed(() =>
+  imageModalProduct.value ? productImages(imageModalProduct.value) : []
+)
+
+const enlargedImageSrc = computed(() =>
+  productImageUrl(modalImages.value[enlargedImageIndex.value])
+)
+
+function openImageGallery(product) {
+  if (!productImages(product).length) return
+  imageModalProduct.value = product
+  enlargedImageIndex.value = 0
+}
+
+function closeImageGallery() {
+  imageModalProduct.value = null
+}
+
+function selectEnlargedImage(index) {
+  enlargedImageIndex.value = index
+}
+
+function onImageModalKeydown(event) {
+  if (!imageModalProduct.value) return
+  if (event.key === 'Escape') {
+    closeImageGallery()
+    return
+  }
+  const last = modalImages.value.length - 1
+  if (event.key === 'ArrowLeft' && enlargedImageIndex.value > 0) {
+    enlargedImageIndex.value--
+  }
+  if (event.key === 'ArrowRight' && enlargedImageIndex.value < last) {
+    enlargedImageIndex.value++
+  }
 }
 
 function isLowStock(product) {
@@ -248,6 +298,18 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', onBulkMenuOutside)
+  document.removeEventListener('keydown', onImageModalKeydown)
+  document.body.style.overflow = ''
+})
+
+watch(imageModalProduct, (product) => {
+  if (product) {
+    document.addEventListener('keydown', onImageModalKeydown)
+    document.body.style.overflow = 'hidden'
+  } else {
+    document.removeEventListener('keydown', onImageModalKeydown)
+    document.body.style.overflow = ''
+  }
 })
 
 watch(
@@ -424,12 +486,22 @@ watch(
                   />
                 </td>
                 <td class="col-image">
-                  <img
+                  <button
                     v-if="firstImageUrl(p)"
-                    :src="firstImageUrl(p)"
-                    :alt="p.name"
-                    class="thumb"
-                  />
+                    type="button"
+                    class="image-cell-btn"
+                    :aria-label="`View images for ${p.name}`"
+                    @click="openImageGallery(p)"
+                  >
+                    <img
+                      :src="firstImageUrl(p)"
+                      :alt="p.name"
+                      class="thumb"
+                    />
+                    <span v-if="extraImageCount(p)" class="more-badge">
+                      +{{ extraImageCount(p) }} more
+                    </span>
+                  </button>
                   <span v-else class="no-img">—</span>
                 </td>
                 <td class="col-name">
@@ -491,6 +563,70 @@ watch(
     <aside v-if="showForm" class="form-panel">
       <router-view />
     </aside>
+
+    <Teleport to="body">
+      <div
+        v-if="imageModalProduct"
+        class="image-modal-backdrop"
+        role="presentation"
+        @click.self="closeImageGallery"
+      >
+        <div
+          class="image-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="`Images for ${imageModalProduct.name}`"
+        >
+          <header class="image-modal-header">
+            <h2 class="image-modal-title">{{ imageModalProduct.name }}</h2>
+            <button
+              type="button"
+              class="image-modal-close"
+              aria-label="Close"
+              @click="closeImageGallery"
+            >
+              ×
+            </button>
+          </header>
+
+          <div class="image-modal-main">
+            <img
+              v-if="enlargedImageSrc"
+              :src="enlargedImageSrc"
+              :alt="`${imageModalProduct.name} image ${enlargedImageIndex + 1}`"
+              class="image-modal-enlarge"
+            />
+          </div>
+
+          <div
+            v-if="modalImages.length > 1"
+            class="image-modal-thumbs"
+            role="list"
+          >
+            <button
+              v-for="(img, index) in modalImages"
+              :key="img.id"
+              type="button"
+              role="listitem"
+              class="image-modal-thumb-btn"
+              :class="{ active: index === enlargedImageIndex }"
+              :aria-label="`View image ${index + 1}`"
+              :aria-current="index === enlargedImageIndex ? 'true' : undefined"
+              @click="selectEnlargedImage(index)"
+            >
+              <img
+                :src="productImageUrl(img)"
+                :alt="`${imageModalProduct.name} thumbnail ${index + 1}`"
+              />
+            </button>
+          </div>
+
+          <p v-if="modalImages.length > 1" class="image-modal-hint">
+            Click a thumbnail or use arrow keys to switch images
+          </p>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -741,7 +877,7 @@ h1 {
 }
 
 .product-table col.col-image {
-  width: 76px;
+  width: 88px;
 }
 
 .product-table col.col-name {
@@ -870,6 +1006,27 @@ h1 {
   white-space: nowrap;
 }
 
+.image-cell-btn {
+  position: relative;
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.image-cell-btn:hover .thumb {
+  border-color: #2d5bff;
+}
+
+.image-cell-btn:focus-visible {
+  outline: 2px solid #2d5bff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .thumb {
   width: 48px;
   height: 48px;
@@ -879,8 +1036,137 @@ h1 {
   border: 1px solid #e5e5e5;
 }
 
+.more-badge {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #2d5bff;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .no-img {
   color: #999;
+}
+
+.image-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  box-sizing: border-box;
+}
+
+.image-modal {
+  width: min(720px, 100%);
+  max-height: min(90vh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.image-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.image-modal-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-modal-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: #444;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.image-modal-close:hover {
+  background: #e8eaef;
+}
+
+.image-modal-main {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: #f8f9fb;
+  overflow: auto;
+}
+
+.image-modal-enlarge {
+  max-width: 100%;
+  max-height: min(60vh, 520px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.image-modal-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #eee;
+  background: #fff;
+}
+
+.image-modal-thumb-btn {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.image-modal-thumb-btn img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+}
+
+.image-modal-thumb-btn:hover {
+  border-color: #c7d7ff;
+}
+
+.image-modal-thumb-btn.active {
+  border-color: #2d5bff;
+}
+
+.image-modal-hint {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: 0.75rem;
+  color: #888;
 }
 
 .name-cell {

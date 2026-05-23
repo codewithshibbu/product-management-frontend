@@ -24,6 +24,7 @@ const imageFiles = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+const fileInput = ref(null)
 
 function resetForm() {
   name.value = ''
@@ -113,6 +114,23 @@ function closePanel() {
   router.push({ name: 'products' })
 }
 
+function fillDummyData() {
+  const suffix = Date.now().toString().slice(-6)
+  name.value = `Demo Product ${suffix}`
+  description.value = 'Sample description for quick testing.'
+  price.value = '24.99'
+  stockQuantity.value = 5
+  lowStockThreshold.value = 10
+  error.value = ''
+}
+
+function resetValues() {
+  resetForm()
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
 const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value)
 
 onMounted(loadProduct)
@@ -125,12 +143,34 @@ watch(() => route.name, loadProduct)
   <div class="panel">
     <div class="panel-head">
       <h2>{{ isEdit ? 'Edit product' : 'New product' }}</h2>
-      <button type="button" class="close-btn" @click="closePanel">Close</button>
+      <div class="panel-actions">
+        <template v-if="!isEdit">
+          <button type="button" class="dummy-btn" @click="fillDummyData">
+            Fill dummy data
+          </button>
+          <button type="button" class="reset-btn" @click="resetValues">Reset</button>
+        </template>
+        <button
+          v-if="!loading"
+          type="submit"
+          form="product-form"
+          class="btn-save"
+          :disabled="saving"
+        >
+          {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create' }}
+        </button>
+        <button type="button" class="close-btn" @click="closePanel">Close</button>
+      </div>
     </div>
 
     <p v-if="loading">Loading...</p>
 
-    <form v-else class="form" @submit.prevent="onSubmit">
+    <form
+      v-else
+      id="product-form"
+      class="form"
+      @submit.prevent="onSubmit"
+    >
       <label>
         Name
         <input v-model="name" type="text" required />
@@ -178,17 +218,16 @@ watch(() => route.name, loadProduct)
 
       <label>
         {{ isEdit ? 'Add more images' : 'Images' }}
-        <input type="file" accept="image/*" multiple @change="onFileChange" />
+        <input
+          ref="fileInput"
+          type="file"
+          accept="image/*"
+          multiple
+          @change="onFileChange"
+        />
       </label>
 
       <p v-if="error" class="error">{{ error }}</p>
-
-      <div class="form-actions">
-        <button type="button" class="btn-cancel" @click="closePanel">Cancel</button>
-        <button type="submit" class="btn-save" :disabled="saving">
-          {{ saving ? 'Saving...' : isEdit ? 'Update' : 'Create' }}
-        </button>
-      </div>
     </form>
   </div>
 </template>
@@ -211,6 +250,44 @@ watch(() => route.name, loadProduct)
 h2 {
   margin: 0;
   font-size: 1.15rem;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dummy-btn {
+  padding: 6px 12px;
+  border: 1px solid #2d5bff;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #2d5bff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.dummy-btn:hover {
+  background: #dbe4ff;
+}
+
+.reset-btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.reset-btn:hover {
+  background: #f9f9f9;
 }
 
 .close-btn {
@@ -288,31 +365,24 @@ textarea {
   cursor: pointer;
 }
 
-.form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.btn-cancel {
-  padding: 10px 16px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-}
-
 .btn-save {
-  padding: 10px 16px;
+  padding: 6px 14px;
   background: #2d5bff;
   color: #fff;
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.btn-save:hover:not(:disabled) {
+  background: #2449d4;
 }
 
 .btn-save:disabled {
   opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .low-hint {

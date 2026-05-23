@@ -14,7 +14,7 @@ async function handleLogout() {
 <template>
   <div class="layout">
     <header>
-      <router-link to="/products" class="brand">Products</router-link>
+      <router-link to="/products" class="brand">PRODUCT MANAGEMENT SYSTEM</router-link>
       <div class="header-actions">
         <NotificationBell />
         <button type="button" class="logout" @click="handleLogout">Log out</button>
@@ -42,7 +42,7 @@ header {
 }
 
 .brand {
-  font-weight: 600;
+  font-weight: 900;
   color: #222;
   text-decoration: none;
 }

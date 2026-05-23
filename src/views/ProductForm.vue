@@ -166,6 +166,20 @@ function toggleSaveMenu() {
   saveMenuOpen.value = !saveMenuOpen.value
 }
 
+function onFillDummy() {
+  saveMenuOpen.value = false
+  fillDummyData()
+}
+
+function onResetClick() {
+  saveMenuOpen.value = false
+  if (isEdit.value) {
+    loadProduct()
+  } else {
+    resetValues()
+  }
+}
+
 function onSaveMenuOutside(event) {
   if (saveMenuRef.value && !saveMenuRef.value.contains(event.target)) {
     saveMenuOpen.value = false
@@ -176,7 +190,7 @@ const isLowStock = computed(() => stockQuantity.value <= lowStockThreshold.value
 
 const saveLabel = computed(() => (isEdit.value ? 'Update' : 'Create'))
 const saveAndCloseLabel = computed(() =>
-  isEdit.value ? 'Update and close' : 'Create and close'
+  isEdit.value ? 'Update And Close' : 'Create And Close'
 )
 
 onMounted(() => {
@@ -197,13 +211,6 @@ watch(() => route.name, loadProduct)
     <div class="panel-head">
       <h2>{{ isEdit ? 'Edit product' : 'New product' }}</h2>
       <div class="panel-actions">
-        <template v-if="!isEdit">
-          <button type="button" class="dummy-btn" @click="fillDummyData">
-            Fill dummy data
-          </button>
-          <button type="button" class="reset-btn" @click="resetValues">Reset</button>
-        </template>
-
         <div v-if="!loading" ref="saveMenuRef" class="save-dropdown">
           <div class="save-split">
             <button
@@ -230,6 +237,17 @@ watch(() => route.name, loadProduct)
             </button>
             <button type="button" :disabled="saving" @click="onSubmit(true)">
               {{ saveAndCloseLabel }}
+            </button>
+            <template v-if="!isEdit">
+              <button type="button" class="menu-extra" @click="onFillDummy">
+                Fill 
+              </button>
+              <button type="button" class="menu-extra" @click="onResetClick">
+                Reset
+              </button>
+            </template>
+            <button v-else type="button" class="menu-extra" @click="onResetClick">
+              Reset
             </button>
           </div>
         </div>
@@ -422,33 +440,14 @@ h2 {
   border-top: 1px solid #eee;
 }
 
-.dummy-btn {
-  padding: 6px 12px;
-  border: 1px solid #2d5bff;
-  border-radius: 6px;
-  background: #eef2ff;
+.save-menu .menu-extra {
+  color: #444;
+  font-size: 0.85rem;
+}
+
+.save-menu .menu-extra:hover:not(:disabled) {
+  background: #f4f5f7;
   color: #2d5bff;
-  cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.dummy-btn:hover {
-  background: #dbe4ff;
-}
-
-.reset-btn {
-  padding: 6px 12px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.reset-btn:hover {
-  background: #f9f9f9;
 }
 
 .close-btn {

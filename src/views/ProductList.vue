@@ -512,7 +512,7 @@ watch(
 
 .page.has-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) min(480px, 46vw);
+  grid-template-columns: minmax(0, 1fr) min(640px, 58vw);
   align-items: stretch;
 }
 

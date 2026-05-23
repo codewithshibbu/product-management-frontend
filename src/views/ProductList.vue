@@ -1,14 +1,16 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchProducts, deleteProduct, productListAction } from '../services/products'
 
 const route = useRoute()
+const router = useRouter()
 
 const products = ref([])
 const lowStockCount = ref(0)
 const meta = ref({})
 const loading = ref(false)
+const refreshing = ref(false)
 const error = ref('')
 const selectedIds = ref([])
 const bulkMenuOpen = ref(false)
@@ -59,7 +61,12 @@ function buildParams() {
 }
 
 async function loadProducts() {
-  loading.value = true
+  const hasRows = products.value.length > 0
+  if (hasRows) {
+    refreshing.value = true
+  } else {
+    loading.value = true
+  }
   error.value = ''
   try {
     const data = await fetchProducts(buildParams())
@@ -75,9 +82,12 @@ async function loadProducts() {
     }
   } catch {
     error.value = 'Could not load products.'
-    products.value = []
+    if (!hasRows) {
+      products.value = []
+    }
   } finally {
     loading.value = false
+    refreshing.value = false
   }
 }
 
@@ -221,11 +231,12 @@ watch(
 watch(
   () => route.name,
   (name, prev) => {
-    if (
-      (prev === 'product-create' || prev === 'product-edit') &&
-      name === 'products'
-    ) {
-      loadProducts()
+    const leftForm =
+      (prev === 'product-create' || prev === 'product-edit') && name === 'products'
+    if (leftForm && route.query.refresh === '1') {
+      loadProducts().finally(() => {
+        router.replace({ name: 'products' })
+      })
     }
   }
 )
@@ -288,12 +299,11 @@ watch(
       </p>
 
       <p v-if="error" class="error">{{ error }}</p>
-      <p v-else-if="loading">Loading...</p>
-
-      <p v-else-if="products.length === 0" class="empty">No products found.</p>
+      <p v-else-if="loading && products.length === 0">Loading...</p>
+      <p v-else-if="products.length === 0">No products found.</p>
 
       <template v-else>
-        <div class="list-toolbar">
+        <div class="list-toolbar" :class="{ 'is-refreshing': refreshing }">
           <label class="select-all">
             <input
               type="checkbox"
@@ -339,7 +349,7 @@ watch(
           </div>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap" :class="{ 'is-refreshing': refreshing }">
           <table class="product-table">
             <thead>
               <tr>
@@ -440,6 +450,7 @@ watch(
   flex: 1;
   min-width: 0;
   padding: 8px;
+  transition: flex 0.2s ease, max-width 0.2s ease;
 }
 
 .list-panel.half {
@@ -449,12 +460,20 @@ watch(
   overflow-y: auto;
 }
 
+.list-toolbar.is-refreshing,
+.table-wrap.is-refreshing {
+  opacity: 0.65;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
 .form-panel {
   flex: 0 0 50%;
   max-width: 50%;
   min-width: 0;
   overflow-y: auto;
   background: #f4f5f7;
+  transition: flex 0.2s ease, max-width 0.2s ease;
 }
 
 .top {

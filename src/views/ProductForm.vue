@@ -102,7 +102,7 @@ async function onSubmit() {
     } else {
       await createProduct(formData)
     }
-    router.push({ name: 'products' })
+    router.push({ name: 'products', query: { refresh: '1' } })
   } catch (e) {
     error.value = e.response?.data?.message || 'Could not save product.'
   } finally {

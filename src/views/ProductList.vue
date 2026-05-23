@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchProducts, deleteProduct } from '../services/products'
+import { fetchProducts, deleteProduct, productListAction } from '../services/products'
 
 const route = useRoute()
 
@@ -10,6 +10,10 @@ const lowStockCount = ref(0)
 const meta = ref({})
 const loading = ref(false)
 const error = ref('')
+const selectedIds = ref([])
+const bulkMenuOpen = ref(false)
+const bulkMenuRef = ref(null)
+const bulkActionLoading = ref(false)
 
 const showForm = computed(
   () => route.name === 'product-create' || route.name === 'product-edit'
@@ -32,6 +36,18 @@ const filters = ref({
 
 let searchTimer = null
 
+const allPageSelected = computed(
+  () =>
+    products.value.length > 0 &&
+    products.value.every((p) => selectedIds.value.includes(p.id))
+)
+
+const somePageSelected = computed(
+  () => selectedIds.value.length > 0 && !allPageSelected.value
+)
+
+const hasSelection = computed(() => selectedIds.value.length > 0)
+
 function buildParams() {
   const params = { ...filters.value }
   if (!params.search) delete params.search
@@ -48,6 +64,9 @@ async function loadProducts() {
   try {
     const data = await fetchProducts(buildParams())
     products.value = data.data
+    selectedIds.value = selectedIds.value.filter((id) =>
+      products.value.some((p) => p.id === id)
+    )
     lowStockCount.value = data.low_stock_count ?? 0
     meta.value = {
       current_page: data.current_page,
@@ -82,6 +101,7 @@ async function onDelete(id) {
   if (!confirm('Delete this product?')) return
   try {
     await deleteProduct(id)
+    selectedIds.value = selectedIds.value.filter((sid) => sid !== id)
     if (products.value.length === 1 && filters.value.page > 1) {
       filters.value.page--
     }
@@ -91,7 +111,91 @@ async function onDelete(id) {
   }
 }
 
-onMounted(loadProducts)
+function isSelected(id) {
+  return selectedIds.value.includes(id)
+}
+
+function toggleSelect(id) {
+  if (isSelected(id)) {
+    selectedIds.value = selectedIds.value.filter((sid) => sid !== id)
+  } else {
+    selectedIds.value = [...selectedIds.value, id]
+  }
+}
+
+function toggleSelectAll() {
+  if (allPageSelected.value) {
+    const pageIds = products.value.map((p) => p.id)
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id))
+  } else {
+    const merged = new Set([...selectedIds.value, ...products.value.map((p) => p.id)])
+    selectedIds.value = [...merged]
+  }
+}
+
+function toggleBulkMenu() {
+  bulkMenuOpen.value = !bulkMenuOpen.value
+}
+
+function closeBulkMenu() {
+  bulkMenuOpen.value = false
+}
+
+async function onDeleteSelected() {
+  closeBulkMenu()
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) {
+    alert('Select at least one product, or use Delete all.')
+    return
+  }
+  if (!confirm(`Delete ${ids.length} selected product(s)?`)) return
+
+  bulkActionLoading.value = true
+  try {
+    await productListAction({ action: 'delete', ids })
+    selectedIds.value = []
+    if (products.value.length <= ids.length && filters.value.page > 1) {
+      filters.value.page--
+    }
+    await loadProducts()
+  } catch {
+    alert('Could not delete selected products.')
+  } finally {
+    bulkActionLoading.value = false
+  }
+}
+
+async function onDeleteAll() {
+  closeBulkMenu()
+  if (!confirm('Delete ALL products? This cannot be undone.')) return
+
+  bulkActionLoading.value = true
+  try {
+    await productListAction({ action: 'delete-all' })
+    selectedIds.value = []
+    filters.value.page = 1
+    await loadProducts()
+  } catch {
+    alert('Could not delete all products.')
+  } finally {
+    bulkActionLoading.value = false
+  }
+}
+
+function onBulkMenuOutside(event) {
+  if (bulkMenuRef.value && !bulkMenuRef.value.contains(event.target)) {
+    closeBulkMenu()
+  }
+}
+
+onMounted(() => {
+  loadProducts()
+  document.addEventListener('click', onBulkMenuOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onBulkMenuOutside)
+})
 
 watch(
   () => [
@@ -177,13 +281,67 @@ watch(
 
       <p v-else-if="products.length === 0" class="empty">No products found.</p>
 
-      <ul v-else class="list">
+      <template v-else>
+        <div class="list-toolbar">
+          <label class="select-all">
+            <input
+              type="checkbox"
+              :checked="allPageSelected"
+              :indeterminate.prop="somePageSelected"
+              @change="toggleSelectAll"
+            />
+            <span>Select all on page</span>
+          </label>
+
+          <span v-if="hasSelection" class="selection-count">
+            {{ selectedIds.length }} selected
+          </span>
+
+          <div ref="bulkMenuRef" class="bulk-menu-wrap">
+            <button
+              type="button"
+              class="bulk-toggle"
+              :class="{ open: bulkMenuOpen }"
+              :disabled="bulkActionLoading"
+              aria-label="Bulk actions"
+              @click.stop="toggleBulkMenu"
+            >
+              <span class="caret" aria-hidden="true">▲</span>
+            </button>
+            <div v-if="bulkMenuOpen" class="bulk-menu" @click.stop>
+              <button
+                type="button"
+                :disabled="!hasSelection || bulkActionLoading"
+                @click="onDeleteSelected"
+              >
+                Delete selected
+              </button>
+              <button
+                type="button"
+                class="danger"
+                :disabled="bulkActionLoading"
+                @click="onDeleteAll"
+              >
+                Delete all products
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ul class="list">
         <li
           v-for="p in products"
           :key="p.id"
           class="item"
-          :class="{ active: activeProductId === p.id }"
+          :class="{ active: activeProductId === p.id, selected: isSelected(p.id) }"
         >
+          <label class="row-check">
+            <input
+              type="checkbox"
+              :checked="isSelected(p.id)"
+              @change="toggleSelect(p.id)"
+            />
+          </label>
           <div class="item-main">
             <strong>{{ p.name }}</strong>
             <span>${{ Number(p.price).toFixed(2) }}</span>
@@ -196,6 +354,7 @@ watch(
           </div>
         </li>
       </ul>
+      </template>
 
       <div v-if="meta.last_page > 1" class="pager">
         <button
@@ -332,6 +491,117 @@ h1 {
   cursor: pointer;
 }
 
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.selection-count {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.bulk-menu-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.bulk-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.bulk-toggle:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+
+.bulk-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bulk-toggle .caret {
+  display: inline-block;
+  font-size: 0.75rem;
+  transition: transform 0.15s ease;
+}
+
+.bulk-toggle.open .caret {
+  transform: rotate(180deg);
+}
+
+.bulk-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.bulk-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: #fff;
+  text-align: left;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.bulk-menu button:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+
+.bulk-menu button:disabled {
+  color: #999;
+  cursor: not-allowed;
+}
+
+.bulk-menu button.danger {
+  color: #b42318;
+  border-top: 1px solid #eee;
+}
+
+.row-check {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.list li.item.selected {
+  border-color: #93b4ff;
+  background: #f8faff;
+}
+
 .low-banner {
   margin: 0 0 12px;
   padding: 10px 12px;
@@ -352,7 +622,7 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 6px;

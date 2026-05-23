@@ -27,6 +27,11 @@ export async function deleteProduct(id) {
   return data
 }
 
+export async function productListAction(payload) {
+  const { data } = await api.patch('/products/list-action', payload)
+  return data
+}
+
 export function buildProductFormData(fields, imageFiles = [], removeImageIds = []) {
   const fd = new FormData()
   fd.append('name', fields.name)

@@ -137,6 +137,10 @@ function firstImageUrl(product) {
   return productImageUrl(productImages(product)[0])
 }
 
+function creatorName(product) {
+  return product.user?.name?.trim() || '—'
+}
+
 function extraImageCount(product) {
   const count = productImages(product).length
   return count > 1 ? count - 1 : 0
@@ -340,9 +344,15 @@ watch(
 <template>
   <div class="page" :class="{ 'has-form': showForm }">
     <section class="list-panel">
-      <div class="top">
-        <h1>Products</h1>
-        <router-link to="/products/new" class="btn">Add product</router-link>
+      <div class="top-bar">
+        <h1>
+          Products
+          <span v-if="meta.total != null" class="title-count">({{ meta.total }})</span>
+        </h1>
+        <p v-if="lowStockCount > 0" class="low-banner" role="status">
+          {{ lowStockCount }} product{{ lowStockCount === 1 ? '' : 's' }} low on stock.
+        </p>
+        <router-link to="/products/new" class="btn btn-add">Add product</router-link>
       </div>
 
       <div class="filters">
@@ -389,70 +399,72 @@ watch(
         <button type="button" class="btn-secondary" @click="applyFilters">Apply</button>
       </div>
 
-      <p v-if="lowStockCount > 0" class="low-banner">
-        {{ lowStockCount }} product(s) low on stock.
-      </p>
-
       <p v-if="error" class="error">{{ error }}</p>
       <p v-else-if="loading && products.length === 0">Loading...</p>
       <p v-else-if="products.length === 0">No products found.</p>
 
       <template v-else>
-        <div class="list-toolbar" :class="{ 'is-refreshing': refreshing }">
-          <label class="select-all">
-            <input
-              type="checkbox"
-              :checked="allPageSelected"
-              :indeterminate.prop="somePageSelected"
-              @change="toggleSelectAll"
-            />
-            <span>Select all on page</span>
-          </label>
-
-          <span v-if="hasSelection" class="selection-count">
-            {{ selectedIds.length }} selected
-          </span>
-
-          <div ref="bulkMenuRef" class="bulk-menu-wrap">
-            <button
-              type="button"
-              class="bulk-toggle"
-              :class="{ open: bulkMenuOpen }"
-              :disabled="bulkActionLoading"
-              aria-label="Bulk actions"
-              @click.stop="toggleBulkMenu"
+        <div class="table-wrap" :class="{ 'is-refreshing': refreshing }">
+          <div class="table-bulk-bar">
+            <label
+              class="bulk-check-slot select-all"
+              :title="`Select all on page (${products.length})`"
             >
-              <span class="caret" aria-hidden="true">▲</span>
-            </button>
-            <div v-if="bulkMenuOpen" class="bulk-menu" @click.stop>
-              <button
-                type="button"
-                :disabled="!hasSelection || bulkActionLoading"
-                @click="onDeleteSelected"
-              >
-                Delete selected
-              </button>
-              <button
-                type="button"
-                class="danger"
-                :disabled="bulkActionLoading"
-                @click="onDeleteAll"
-              >
-                Delete all products
-              </button>
+              <input
+                type="checkbox"
+                :checked="allPageSelected"
+                :indeterminate.prop="somePageSelected"
+                @change="toggleSelectAll"
+              />
+              <span class="bulk-select-count" aria-hidden="true">{{ selectedIds.length }}</span>
+              <span class="sr-only">Select all on page, {{ selectedIds.length }} selected</span>
+            </label>
+
+            <div class="bulk-actions-slot">
+              <div ref="bulkMenuRef" class="bulk-menu-wrap">
+                <button
+                  type="button"
+                  class="bulk-toggle"
+                  :class="{ open: bulkMenuOpen }"
+                  :disabled="bulkActionLoading"
+                  aria-haspopup="menu"
+                  :aria-expanded="bulkMenuOpen"
+                  aria-label="Delete actions"
+                  @click.stop="toggleBulkMenu"
+                >
+                  <span class="caret" aria-hidden="true">▲</span>
+                </button>
+                <div v-if="bulkMenuOpen" class="bulk-menu" role="menu" @click.stop>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    :disabled="!hasSelection || bulkActionLoading"
+                    @click="onDeleteSelected"
+                  >
+                    Delete selected
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="danger"
+                    :disabled="bulkActionLoading"
+                    @click="onDeleteAll"
+                  >
+                    Delete all products
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="table-wrap" :class="{ 'is-refreshing': refreshing }">
-          <table class="product-table">
+          <table class="product-table" :class="{ compact: showForm }">
             <colgroup>
               <col class="col-check" />
-              <col class="col-image" />
+              <col v-if="!showForm" class="col-image" />
               <col class="col-name" />
-              <col class="col-desc" />
+              <col v-if="!showForm" class="col-desc" />
               <col class="col-price" />
               <col class="col-stock" />
+              <col v-if="!showForm" class="col-created" />
               <col class="col-action" />
             </colgroup>
             <thead>
@@ -460,11 +472,12 @@ watch(
                 <th class="col-check" scope="col">
                   <span class="sr-only">Select</span>
                 </th>
-                <th class="col-image" scope="col">Images</th>
+                <th v-if="!showForm" class="col-image" scope="col">Images</th>
                 <th class="col-name" scope="col">Product Name</th>
-                <th class="col-desc" scope="col">Description</th>
+                <th v-if="!showForm" class="col-desc" scope="col">Description</th>
                 <th class="col-price" scope="col">Price</th>
                 <th class="col-stock" scope="col">Stock</th>
+                <th v-if="!showForm" class="col-created" scope="col">Added by</th>
                 <th class="col-action" scope="col">Action</th>
               </tr>
             </thead>
@@ -485,7 +498,7 @@ watch(
                     @change="toggleSelect(p.id)"
                   />
                 </td>
-                <td class="col-image">
+                <td v-if="!showForm" class="col-image">
                   <button
                     v-if="firstImageUrl(p)"
                     type="button"
@@ -510,7 +523,7 @@ watch(
                     <span v-if="isLowStock(p)" class="low-badge">Low stock</span>
                   </div>
                 </td>
-                <td class="col-desc">
+                <td v-if="!showForm" class="col-desc">
                   <span v-if="!p.description?.trim()" class="no-desc">—</span>
                   <button
                     v-else-if="canExpandDescription(p)"
@@ -525,6 +538,7 @@ watch(
                 </td>
                 <td class="col-price">${{ Number(p.price).toFixed(2) }}</td>
                 <td class="col-stock">{{ p.stock_quantity }}</td>
+                <td v-if="!showForm" class="col-created">{{ creatorName(p) }}</td>
                 <td class="col-action">
                   <router-link :to="`/products/${p.id}/edit`" class="btn-edit">
                     Edit
@@ -654,7 +668,6 @@ watch(
   border-right: 1px solid #ddd;
 }
 
-.list-toolbar.is-refreshing,
 .table-wrap.is-refreshing {
   opacity: 0.65;
   pointer-events: none;
@@ -671,7 +684,7 @@ watch(
 .page.has-form .filters {
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 1px;
 }
 
 .page.has-form .filters > * {
@@ -683,17 +696,35 @@ watch(
   min-width: 180px;
 }
 
-.top {
+.top-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 14px;
   margin-bottom: 16px;
-  gap: 12px;
+  min-width: 0;
 }
 
-h1 {
+.top-bar h1 {
   margin: 0;
   font-size: 1.3rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.title-count {
+  font-weight: 600;
+  color: #444;
+}
+
+.top-bar .low-banner {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.btn-add {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .filters {
@@ -746,42 +777,58 @@ h1 {
   cursor: pointer;
 }
 
-.list-toolbar {
+.table-bulk-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 6px 12px 4px;
+  background: transparent;
+}
+
+.bulk-check-slot {
+  flex: 0 0 56px;
+  width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 0 14px;
+  cursor: pointer;
+}
+
+.bulk-select-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #444;
+  min-width: 1ch;
+  line-height: 1;
+  user-select: none;
+}
+
+.bulk-actions-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .select-all {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
   cursor: pointer;
-}
-
-.selection-count {
-  font-size: 0.85rem;
-  color: #555;
 }
 
 .bulk-menu-wrap {
   position: relative;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .bulk-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 32px;
   height: 32px;
+  padding: 0;
   border: 1px solid #ccc;
   border-radius: 6px;
   background: #fff;
@@ -810,7 +857,7 @@ h1 {
 .bulk-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
   min-width: 180px;
   background: #fff;
   border: 1px solid #ddd;
@@ -866,14 +913,34 @@ h1 {
 
 .product-table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1000px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
 
+.product-table.compact {
+  min-width: 0;
+}
+
+.product-table.compact col.col-name {
+  width: auto;
+}
+
+.product-table.compact col.col-price {
+  width: 22%;
+}
+
+.product-table.compact col.col-stock {
+  width: 18%;
+}
+
+.product-table.compact col.col-action {
+  width: 28%;
+}
+
 .product-table col.col-check {
-  width: 44px;
+  width: 56px;
 }
 
 .product-table col.col-image {
@@ -885,19 +952,23 @@ h1 {
 }
 
 .product-table col.col-desc {
-  width: 34%;
+  width: 28%;
 }
 
 .product-table col.col-price {
-  width: 10%;
+  width: 9%;
 }
 
 .product-table col.col-stock {
-  width: 8%;
+  width: 7%;
+}
+
+.product-table col.col-created {
+  width: 12%;
 }
 
 .product-table col.col-action {
-  width: 14%;
+  width: 13%;
 }
 
 .product-table th,
@@ -999,6 +1070,16 @@ h1 {
 .product-table th.col-stock,
 .product-table td.col-stock {
   white-space: nowrap;
+}
+
+.product-table th.col-created,
+.product-table td.col-created {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
+  font-size: 0.85rem;
+  color: #444;
 }
 
 .product-table th.col-action,
@@ -1227,13 +1308,17 @@ h1 {
 }
 
 .low-banner {
-  margin: 0 0 12px;
-  padding: 10px 12px;
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 12px;
   background: #fff7ed;
   border: 1px solid #fed7aa;
   border-radius: 6px;
   color: #9a3412;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .pager {

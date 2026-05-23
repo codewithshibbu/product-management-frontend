@@ -50,6 +50,9 @@ const somePageSelected = computed(
 
 const hasSelection = computed(() => selectedIds.value.length > 0)
 
+const DESCRIPTION_LIMIT = 100
+const expandedDescIds = ref(new Set())
+
 function buildParams() {
   const params = { ...filters.value }
   if (!params.search) delete params.search
@@ -134,6 +137,33 @@ function isLowStock(product) {
     return Boolean(product.is_low_stock)
   }
   return product.stock_quantity <= product.low_stock_threshold
+}
+
+function isDescExpanded(id) {
+  return expandedDescIds.value.has(id)
+}
+
+function toggleDescription(id) {
+  const next = new Set(expandedDescIds.value)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+  }
+  expandedDescIds.value = next
+}
+
+function getDescriptionText(product) {
+  const text = (product.description || '').trim()
+  if (!text) return ''
+  if (isDescExpanded(product.id) || text.length <= DESCRIPTION_LIMIT) {
+    return text
+  }
+  return `${text.slice(0, DESCRIPTION_LIMIT)}...`
+}
+
+function canExpandDescription(product) {
+  return (product.description || '').trim().length > DESCRIPTION_LIMIT
 }
 
 function toggleSelect(id) {
@@ -365,16 +395,26 @@ watch(
 
         <div class="table-wrap" :class="{ 'is-refreshing': refreshing }">
           <table class="product-table">
+            <colgroup>
+              <col class="col-check" />
+              <col class="col-image" />
+              <col class="col-name" />
+              <col class="col-desc" />
+              <col class="col-price" />
+              <col class="col-stock" />
+              <col class="col-action" />
+            </colgroup>
             <thead>
               <tr>
                 <th class="col-check" scope="col">
                   <span class="sr-only">Select</span>
                 </th>
-                <th scope="col">Images</th>
-                <th scope="col">Product Name</th>
-                <th scope="col">Price</th>
-                <th scope="col">Stock</th>
-                <th scope="col">Action</th>
+                <th class="col-image" scope="col">Images</th>
+                <th class="col-name" scope="col">Product Name</th>
+                <th class="col-desc" scope="col">Description</th>
+                <th class="col-price" scope="col">Price</th>
+                <th class="col-stock" scope="col">Stock</th>
+                <th class="col-action" scope="col">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -408,6 +448,19 @@ watch(
                     <span class="name-text">{{ p.name }}</span>
                     <span v-if="isLowStock(p)" class="low-badge">Low stock</span>
                   </div>
+                </td>
+                <td class="col-desc">
+                  <span v-if="!p.description?.trim()" class="no-desc">—</span>
+                  <button
+                    v-else-if="canExpandDescription(p)"
+                    type="button"
+                    class="desc-text desc-toggle"
+                    :title="isDescExpanded(p.id) ? 'Show less' : 'Show full description'"
+                    @click="toggleDescription(p.id)"
+                  >
+                    {{ getDescriptionText(p) }}
+                  </button>
+                  <span v-else class="desc-text">{{ p.description }}</span>
                 </td>
                 <td class="col-price">${{ Number(p.price).toFixed(2) }}</td>
                 <td class="col-stock">{{ p.stock_quantity }}</td>
@@ -688,9 +741,38 @@ h1 {
 
 .product-table {
   width: 100%;
-  min-width: 620px;
+  min-width: 900px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.9rem;
+}
+
+.product-table col.col-check {
+  width: 44px;
+}
+
+.product-table col.col-image {
+  width: 76px;
+}
+
+.product-table col.col-name {
+  width: 16%;
+}
+
+.product-table col.col-desc {
+  width: 34%;
+}
+
+.product-table col.col-price {
+  width: 10%;
+}
+
+.product-table col.col-stock {
+  width: 8%;
+}
+
+.product-table col.col-action {
+  width: 14%;
 }
 
 .product-table th,
@@ -726,30 +808,76 @@ h1 {
   box-shadow: inset 3px 0 0 #2d5bff;
 }
 
-.col-check {
-  width: 40px;
+.product-table th.col-check,
+.product-table td.col-check {
   text-align: center;
 }
 
-.col-image {
-  width: 72px;
-}
-
-.col-name {
+.product-table th.col-name,
+.product-table td.col-name {
   white-space: normal;
-  min-width: 140px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
 }
 
-.col-price {
-  width: 90px;
+.product-table th.col-desc,
+.product-table td.col-desc {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
 }
 
-.col-stock {
-  width: 70px;
+.product-table tbody td {
+  vertical-align: top;
 }
 
-.col-action {
-  width: 160px;
+.desc-text {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-size: 0.85rem;
+  color: #444;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.desc-toggle {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+}
+
+.desc-toggle:hover {
+  color: #2d5bff;
+}
+
+.no-desc {
+  color: #999;
+}
+
+.product-table th.col-price,
+.product-table td.col-price,
+.product-table th.col-stock,
+.product-table td.col-stock {
+  white-space: nowrap;
+}
+
+.product-table th.col-action,
+.product-table td.col-action {
   white-space: nowrap;
 }
 
